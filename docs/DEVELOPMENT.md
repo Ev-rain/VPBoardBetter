@@ -83,13 +83,12 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 启动器读 `_window.json`，直接作为 `--window-size` / `--window-position` 传给 Edge，窗口一创建就是目标尺寸；
 - 首次创建 `.app-profile/` 时会从默认 Edge 配置迁移 `Default\Local Storage\leveldb`，保留「我的队伍」「QOJ 关联」「上次比赛」；删掉这个目录等于恢复出厂。
 
-## exe 与 Low 完整性
+## exe 的完整性级别检查
 
-`VPBoardBetter.exe` 是 `asInvoker`（不请求管理员）。它会先读自身令牌的完整性级别：
+`VPBoardBetter.exe` 用 `asInvoker` 清单，不请求提升。启动时读自身令牌的完整性级别（`GetTokenInformation(TokenIntegrityLevel)`）：
 
-- Medium 及以上：把 `start.bat` 交给 Shell 执行，正常开窗；
-- Low（工作区目录被打了 `Mandatory Label\Low Mandatory Level` 并继承到文件时会出现）：Windows 会把从该 exe 启动的进程降为 Low IL，Chromium 沙箱在 Low IL 下渲染不出页面，表现为 `--app` 窗口白屏、标题停在 `127.0.0.1_/`。此时 exe 直接弹窗给出修复命令：
-  `icacls "目录" /setintegritylevel (OI)(CI)Medium /T`（不需要管理员），或把程序移出该目录。
+- Medium 及以上：把 `start.bat` 交给 Shell 执行；
+- Low：从带 Low 标签的目录启动会出现这种情况，Chromium 在该级别下渲染不出页面，会表现为 `--app` 窗口空白。此时 exe 直接弹窗提示处理办法，而不是留一个白窗口。
 
 ## 测试
 
