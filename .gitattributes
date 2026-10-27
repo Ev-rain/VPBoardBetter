@@ -1,0 +1,24 @@
+# 统一换行：仓库里存 LF，检出时按平台/类型还原
+* text=auto
+
+# Windows 脚本必须 CRLF，否则 cmd.exe / PowerShell 5.1 解析出错
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
+
+# 二进制
+*.exe binary
+*.ico binary
+*.png binary
+*.jpg binary
+
+# 文本
+*.js text
+*.css text
+*.html text
+*.json text
+*.svg text
+*.md text
+*.cs text
+*.manifest text

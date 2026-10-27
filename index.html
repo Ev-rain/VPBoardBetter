@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VP Board Better · 虚拟榜单</title>
+<link rel="icon" type="image/svg+xml" href="assets/balloon.svg">
+<link rel="mask-icon" href="assets/balloon.svg" color="#ffc93c">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark"><img src="assets/balloon.svg" alt="VP Board Better"></div>
+      <div class="brand-text">
+        <strong>VP Board Better</strong>
+        <span>榜单回放 · 5h / 3h</span>
+      </div>
+    </div>
+
+    <div class="contest-head">
+      <h1 id="contestName">未加载比赛</h1>
+      <div class="meta" id="contestMeta"></div>
+    </div>
+
+    <div class="top-actions">
+      <button class="btn ghost" id="btnMyTeam" title="我的队伍">
+        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4 0-7 2-7 4.5V21h14v-2.5C19 16 16 14 12 14Z"/></svg>
+        <span>我的队伍</span>
+      </button>
+      <button class="btn ghost" id="btnData" title="数据源">
+        <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M12 3C7 3 3 4.8 3 7v10c0 2.2 4 4 9 4s9-1.8 9-4V7c0-2.2-4-4-9-4Zm0 2c4.4 0 7 1.4 7 2s-2.6 2-7 2-7-1.4-7-2 2.6-2 7-2Zm0 14c-4.4 0-7-1.4-7-2v-2.3c1.6 1.1 4.2 1.8 7 1.8s5.4-.7 7-1.8V17c0 .6-2.6 2-7 2Zm0-5c-4.4 0-7-1.4-7-2V9.7c1.6 1.1 4.2 1.8 7 1.8s5.4-.7 7-1.8V12c0 .6-2.6 2-7 2Z"/></svg>
+        <span>数据源</span>
+      </button>
+      <button class="btn ghost icon-only" id="btnHelp" title="快捷键与说明">?</button>
+    </div>
+  </header>
+
+  <section class="controls">
+    <button class="play-btn" id="btnPlay" title="播放 / 暂停（空格）">
+      <svg class="ic-play" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>
+      <svg class="ic-pause" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7 5h3.5v14H7V5Zm6.5 0H17v14h-3.5V5Z"/></svg>
+    </button>
+
+    <div class="clock">
+      <div class="clock-main" id="clockMain">00:00:00</div>
+      <div class="clock-sub" id="clockSub">/ 00:00:00</div>
+    </div>
+
+    <div class="timeline" id="timeline">
+      <div class="track">
+        <div class="freeze-zone" id="freezeZone" hidden></div>
+        <div class="fill" id="timelineFill"></div>
+        <div class="knob" id="timelineKnob"></div>
+      </div>
+      <div class="tick-labels" id="tickLabels"></div>
+    </div>
+
+    <div class="ctrl-right">
+      <div class="seg" id="modeSeg" title="切换 VP 时长">
+        <button data-mode="full">完整时长</button>
+        <button data-mode="3h" class="on">3 小时</button>
+      </div>
+      <label class="speed">
+        <select id="speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+      </label>
+      <button class="btn ghost icon-only" id="btnRestart" title="从头开始">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></svg>
+      </button>
+      <span class="badge badge-freeze" id="freezeBadge" hidden>封榜中</span>
+    </div>
+  </section>
+
+  <section class="filters">
+    <div class="search">
+      <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M10.5 3a7.5 7.5 0 0 1 5.9 12.1l4.3 4.3-1.4 1.4-4.3-4.3A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>
+      <input id="search" type="search" placeholder="搜索队伍 / 学校 / 队伍号" autocomplete="off" spellcheck="false">
+    </div>
+    <label class="chk"><input type="checkbox" id="officialOnly"><span>只看正式队伍</span></label>
+    <label class="chk"><input type="checkbox" id="showMedals" checked><span>奖牌线</span></label>
+    <div class="filter-spacer"></div>
+    <div class="legend">
+      <span class="lg"><i class="dot ac"></i>过题</span>
+      <span class="lg"><i class="dot wa"></i>未过</span>
+      <span class="lg"><i class="dot fz"></i>封榜</span>
+      <span class="lg" id="legendMode"></span>
+    </div>
+  </section>
+
+  <main class="board-wrap" id="boardWrap">
+    <table class="board" id="board">
+      <thead id="boardHead"></thead>
+      <tbody id="boardBody"></tbody>
+    </table>
+    <div class="empty" id="emptyState">
+      <div class="empty-card">
+        <div class="empty-kicker">VP BOARD BETTER</div>
+        <h2>虚拟榜单回放</h2>
+        <p>加载一场比赛的榜单数据，用 5 小时原速或 3 小时等比例压缩的进度观看完整比赛过程。封榜时间同步缩放（5h 比赛 3h 模式：封榜 36 分钟）。</p>
+        <div class="empty-actions">
+          <button class="btn primary" id="emptyLoad">加载榜单数据</button>
+          <button class="btn ghost" id="emptyFiles">选择本地文件</button>
+        </div>
+        <div class="empty-hint">支持粘贴 <code>board.xcpcio.com</code> 链接，或 <code>icpc/50th/nanjing</code> 这样的路径</div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="statusbar">
+    <span id="statusLeft">未加载数据</span>
+    <span class="spacer"></span>
+    <span id="statusRight"></span>
+  </footer>
+
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <div id="drawerTitle">队伍详情</div>
+      <button class="icon-btn" id="drawerClose" title="关闭">✕</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+</div>
+
+<!-- ============ 数据源弹窗 ============ -->
+<div class="overlay" id="dataOverlay" hidden>
+  <div class="modal modal-data">
+    <div class="modal-head">
+      <h2>加载榜单数据</h2>
+      <button class="icon-btn" data-close title="关闭">✕</button>
+    </div>
+    <div class="tabs" id="dataTabs">
+      <button data-tab="online" class="on">在线榜单</button>
+      <button data-tab="local">本地文件</button>
+    </div>
+    <div class="modal-body">
+      <section class="tab-panel" data-panel="online">
+        <label class="field">
+          <span>榜单链接或路径</span>
+          <div class="field-row">
+            <input id="dataUrl" type="text" spellcheck="false" placeholder="https://board.xcpcio.com/icpc/50th/nanjing">
+            <button class="btn small ghost" id="btnDataBoardPick" title="从 XCPCIO 榜单列表里挑一场">选择榜单</button>
+          </div>
+        </label>
+        <div class="field-hint">例：<code>icpc/50th/nanjing</code> · <code>ccpc/2025/final</code> · 也支持任意能访问 config/team/run.json 的目录</div>
+        <div class="qoj-picker" id="boardPicker" hidden>
+          <div class="qoj-picker-head">
+            <input id="boardPickerSearch" type="text" spellcheck="false" placeholder="搜索榜单：南京 / nanjing / icpc/50th / 2025">
+            <button class="btn small ghost" id="btnBoardPickerClose">收起</button>
+          </div>
+          <div class="qoj-picker-list" id="boardPickerList"></div>
+          <div class="qoj-picker-tip" id="boardPickerTip">从 XCPCIO 的榜单列表里挑，点一行就填进上面的路径。</div>
+        </div>
+        <div class="qoj-contest">
+          <label class="field grow">
+            <span>这场比赛对应的 QOJ 比赛（可选）</span>
+            <input id="dataQoj" type="text" spellcheck="false" placeholder="https://qoj.ac/contest/4597，或直接填 4597">
+          </label>
+          <button class="btn small ghost" id="btnDataQojDetect" title="读取 QOJ 窗口当前所在的比赛页">识别窗口</button>
+          <button class="btn small ghost" id="btnDataQojPick" title="从 QOJ 比赛列表里挑一场">选择比赛</button>
+        </div>
+        <div class="field-hint">只属于这场比赛：A/B/C 会映射到这里的 QOJ 题目，换一场比赛就换一条链接，各自记住各自的。不知道链接就点「选择比赛」按名字搜。</div>
+        <div class="qoj-picker" id="qojPicker" hidden>
+          <div class="qoj-picker-head">
+            <input id="qojPickerSearch" type="text" spellcheck="false" placeholder="搜索比赛：nanjing / 南京 / 4597">
+            <button class="btn small ghost" id="btnQojPickerClose">收起</button>
+          </div>
+          <div class="qoj-picker-list" id="qojPickerList"></div>
+          <div class="qoj-picker-tip" id="qojPickerTip">会从 QOJ 的比赛列表里搜，点一行就填进上面的链接。</div>
+        </div>
+        <div class="recent" id="recentList"></div>
+        <div class="load-status" id="loadStatus"></div>
+      </section>
+      <section class="tab-panel" data-panel="local" hidden>
+        <div class="dropzone" id="dropzone">
+          <strong>拖入 config.json / team.json / run.json</strong>
+          <span>或点击选择文件（可多选）</span>
+          <input type="file" id="fileInput" multiple accept=".json,application/json" hidden>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </section>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnLoadOnline">加载榜单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 提交记录弹窗 ============ -->
+<div class="overlay" id="recordOverlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>记录一次提交</h2>
+      <button class="icon-btn" data-close title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="record-time">
+        <span>提交时间</span>
+        <input id="recordTime" type="text" inputmode="numeric" placeholder="mm:ss">
+        <button class="btn tiny ghost" id="recordNow">= 当前时间</button>
+        <span style="font-size:11.5px;color:var(--text-mute)">分:秒</span>
+      </div>
+      <div class="record-problems" id="recordProblems"></div>
+      <div class="record-verdicts" id="recordVerdicts">
+        <button data-v="AC" class="v-ac on">通过 AC</button>
+        <button data-v="WA" class="v-wa">失败</button>
+        <button data-v="CE" class="v-ce">编译错误 CE（不计罚时）</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>取消</button>
+      <button class="btn primary" id="btnRecordSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ QOJ 弹窗 ============ -->
+<div class="overlay" id="qojOverlay" hidden>
+  <div class="modal modal-qoj">
+    <div class="modal-head">
+      <h2>QOJ 提交</h2>
+      <button class="icon-btn" data-close title="关闭">✕</button>
+    </div>
+    <div class="tabs" id="qojTabs">
+      <button data-tab="submit" class="on">提交代码</button>
+      <button data-tab="account">账号与映射</button>
+      <button data-tab="log">诊断日志</button>
+    </div>
+    <div class="modal-body">
+      <section class="tab-panel" data-panel="submit">
+        <div class="qoj-contest">
+          <div class="qoj-contest-line">
+            <span class="qoj-contest-status" id="qojContestStatus"></span>
+            <button class="btn small ghost" id="btnQojContest">设置比赛</button>
+          </div>
+        </div>
+        <div class="qoj-row">
+          <label class="field grow"><span>题目</span><select id="qojProblem"></select></label>
+          <label class="field"><span>语言</span><select id="qojLanguage"></select></label>
+        </div>
+        <label class="field">
+          <span>代码</span>
+          <textarea id="qojCode" spellcheck="false" placeholder="粘贴代码，或把 .cpp 文件拖进来"></textarea>
+        </label>
+        <div class="qoj-actions">
+          <button class="btn primary" id="btnQojSubmit">提交到 QOJ</button>
+          <span class="qoj-state" id="qojState"></span>
+        </div>
+        <p class="qoj-hint">登录和提交都在后台一个屏幕外的 Edge 里完成（用来过 QOJ 的 Cloudflare 验证），不会弹出窗口；任务栏里的那个浏览器图标不要关。</p>
+      </section>
+      <section class="tab-panel" data-panel="account" hidden>
+        <div class="qoj-account" id="qojAccount"></div>
+        <div class="qoj-mapping" id="qojMapping"></div>
+        <p class="field-hint">账号密码只发送给本机启动器（127.0.0.1），只保存在内存中；关掉启动器即失效。</p>
+      </section>
+      <section class="tab-panel" data-panel="log" hidden>
+        <pre class="qoj-log" id="qojLog"></pre>
+      </section>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 帮助弹窗 ============ -->
+<div class="overlay" id="helpOverlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2>说明</h2>
+      <button class="icon-btn" data-close title="关闭">✕</button>
+    </div>
+    <div class="modal-body help-body">
+      <h3>两种 VP 时长</h3>
+      <ul>
+        <li><b>完整时长</b>：按比赛原始时长 1:1 回放，封榜时间与原比赛一致。</li>
+        <li><b>3 小时</b>：整条时间轴按 3h / 原时长 等比例压缩。5 小时比赛缩放系数 0.6，原来第 5 小时通过的题会在第 3 小时出现，原来 1 小时封榜变成 36 分钟。</li>
+      </ul>
+      <h3>罚时显示</h3>
+      <ul>
+        <li>表格中的过题时间和总罚时始终是<b>原比赛数据</b>；3 小时模式下鼠标悬停在格子上可以看到压缩后的时间。</li>
+        <li>编译错误（CE）不计罚时、也不占格子：自己记录时可以选「编译错误 CE」，QOJ 判 CE 也只记提交、不加罚时。</li>
+        <li>你自己手动记录的提交按榜单时钟计时。</li>
+      </ul>
+      <h3>ICPC 赛制规则</h3>
+      <ul>
+        <li>名次先比<b>过题数</b>，再比<b>罚时</b>（越少越好），最后比<b>最后一道题的通过时间</b>（越早越好）。</li>
+        <li>罚时 = 每道通过题的比赛用时之和 + 20 分钟 × 这道题通过前的失败次数；<b>编译错误（CE）不计罚时</b>。</li>
+        <li><b>封榜</b>：比赛最后 1 小时不再更新榜单，只显示封榜时的状态；本工具 3 小时模式按比例压缩（5 小时比赛封 36 分钟）。</li>
+        <li><b>奖牌</b>：按正式队伍的名次发金 / 银 / 铜，打星队（unofficial）参与排名但不拿奖牌。</li>
+        <li><b>一血</b>：每道题第一支通过的队伍，格子上有虚线内框。</li>
+        <li>「我的队伍」与「QOJ 提交」的用法见顶部「我的队伍」和「数据源」两个按钮。</li>
+      </ul>
+      <h3>快捷键</h3>
+      <ul class="keys">
+        <li><kbd>空格</kbd> 播放 / 暂停</li>
+        <li><kbd>←</kbd> <kbd>→</kbd> 后退 / 前进 1 分钟（Shift 为 5 分钟）</li>
+        <li><kbd>R</kbd> 从头开始</li>
+        <li><kbd>/</kbd> 聚焦搜索框</li>
+      </ul>
+    </div>
+    <div class="modal-foot"><button class="btn primary" data-close>知道了</button></div>
+  </div>
+</div>
+
+<!-- ============ 我的队伍抽屉内容模板 ============ -->
+<template id="tplMyTeam">
+  <div class="mt">
+    <div class="mt-head" id="mtHead"></div>
+    <div class="mt-body" id="mtBody"></div>
+  </div>
+</template>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="assets/core.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/qoj.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
