@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -50,6 +50,53 @@ namespace VPBoardBetter
         [DllImport("user32.dll")]
         private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+        // 完整性级别检测：工作区目录若带 Low 标签，从里面启动的 exe 会跑在 Low IL，
+        // Chromium 的沙箱在 Low IL 下起不来（表现为 --app 窗口白屏）。
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentProcess();
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool GetTokenInformation(IntPtr tokenHandle, int tokenInformationClass, IntPtr tokenInformation, int tokenInformationLength, out int returnLength);
+
+        [DllImport("advapi32.dll")]
+        private static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+
+        [DllImport("advapi32.dll")]
+        private static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthorityIndex);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        private const int TokenIntegrityLevel = 25;
+        private const int MediumRid = 0x2000;
+
+        /// <summary>返回当前进程的完整性级别 RID；取不到时按 Medium 处理。</summary>
+        private static int IntegrityRid()
+        {
+            IntPtr token;
+            if (!OpenProcessToken(GetCurrentProcess(), 0x0008 /* TOKEN_QUERY */, out token)) return MediumRid;
+            try
+            {
+                int len;
+                GetTokenInformation(token, TokenIntegrityLevel, IntPtr.Zero, 0, out len);
+                if (len <= 0) return MediumRid;
+                IntPtr buf = Marshal.AllocHGlobal(len);
+                try
+                {
+                    if (!GetTokenInformation(token, TokenIntegrityLevel, buf, len, out len)) return MediumRid;
+                    IntPtr sid = Marshal.ReadIntPtr(buf); // TOKEN_MANDATORY_LABEL.Label（SID_AND_ATTRIBUTES）在偏移 0
+                    int count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+                    if (count <= 0) return MediumRid;
+                    return Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count - 1)));
+                }
+                finally { Marshal.FreeHGlobal(buf); }
+            }
+            finally { CloseHandle(token); }
+        }
+
         private static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
         private static readonly string LogFile = Path.Combine(Root, "_launch.log");
         private static int Port = DefaultPort;
@@ -81,6 +128,28 @@ namespace VPBoardBetter
                 {
                     Log("应用窗口已在运行，切到前台");
                     Focus(FindAppWindow());
+                    return;
+                }
+
+                // 工作区里带的 Low 完整性标签会把本进程降到 Low IL，Chromium 在 Low IL 下
+                // 渲染不出页面（白屏、标题停在 127.0.0.1）。交给 explorer.exe 重新拉起，
+                // 由它（Medium IL）启动 start.bat，这样无需管理员也无需改动目录 ACL。
+                int rid = IntegrityRid();
+                Log("当前完整性级别 RID=0x" + rid.ToString("X"));
+                if (rid > 0 && rid < MediumRid)
+                {
+                    Log("Low IL：Chromium 无法渲染，给出修复提示并退出");
+                    MessageBox.Show(
+                        "本程序现在运行在「低完整性级别」(Low IL)。\r\n\r\n" +
+                        "原因：程序所在目录（通常是 DSH/Agent 的工作区）被系统打了 Low 完整性标签，\r\n" +
+                        "该标签会被目录里的所有文件继承；Windows 从这类 exe 启动进程时会把进程降为 Low，\r\n" +
+                        "而 Edge/Chromium 的沙箱在 Low 下无法渲染页面，于是窗口全白。\r\n\r\n" +
+                        "修复（任选其一，都不需要管理员）：\r\n" +
+                        "1) 把整个文件夹移到工作区之外，例如 C:\\Users\\你的用户名\\VPBoardBetter；\r\n" +
+                        "2) 或在命令行执行一次：\r\n" +
+                        "   icacls \"" + Root + "\" /setintegritylevel (OI)(CI)Medium /T\r\n\r\n" +
+                        "做完后重新双击本程序即可。",
+                        TitlePart, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
