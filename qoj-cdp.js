@@ -26,6 +26,7 @@ const LEGACY_PROFILE = path.join(__dirname, '.qoj-profile');
    cookie JSON（qoj-session.json），下次启动前用 CDP Storage.setCookies 注入。
    这样既不会产生几百 MB 的组件缓存，也不用每次输密码。*/
 const PROFILE = path.join(os.tmpdir(), 'vpb-qoj-' + process.pid);
+const PROFILE_MARKER = 'vpb-qoj-'; // 只要命令行里带这个前缀，就是我们自己的 QOJ 浏览器
 const SESSION_FILE = process.env.QOJ_SESSION
   ? path.resolve(process.env.QOJ_SESSION)
   : path.join(__dirname, 'qoj-session.json');
@@ -159,7 +160,7 @@ function hideWindow(force) {
     const script = path.join(__dirname, 'tools', 'hide-edge-window.ps1');
     if (!fs.existsSync(script)) { dbg('隐藏窗口: 找不到 ' + script); return; }
     const r = spawnSync('powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Profile', PROFILE, '-Action', 'hide'],
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Profile', PROFILE_MARKER, '-Action', 'hide'],
       { encoding: 'utf8', windowsHide: true, timeout: 20000 });
     const out = ((r.stdout || '') + (r.stderr || '')).trim().split(/\r?\n/).pop();
     windowHidden = true;
@@ -167,7 +168,8 @@ function hideWindow(force) {
   } catch (e) { dbg('隐藏窗口失败: ' + e.message); }
 }
 
-async function connect() {
+async function connect(depth) {
+  const level = depth || 0;
   if (browser && browser.ws && browser.ws.readyState === 1) return;
   let list = null;
   try { list = await getJson('http://127.0.0.1:' + PORT + '/json/list', 1200); } catch (e) { }
@@ -193,6 +195,19 @@ async function connect() {
   await send('Page.enable');
   await send('Runtime.enable');
   dbg('已连接页面: ' + (page.url || ''));
+
+  const alive = await Promise.race([
+    send('Runtime.evaluate', { expression: '1', returnByValue: true }),
+    new Promise((resolve) => setTimeout(() => resolve(null), 3000))
+  ]);
+  if (!alive) {
+    dbg('页面无响应，重置浏览器（第 ' + level + ' 次）');
+    killBrowser();
+    killBrowserProcesses();
+    killPortListener();
+    if (level >= 2) throw new Error('QOJ 浏览器连续无响应，已重置端口仍失败');
+    return connect(level + 1);
+  }
   if (!restored) {
     restored = true;
     const injected = await restoreSession();
@@ -257,11 +272,28 @@ function killBrowser() {
   edgeProc = null;
 }
 
+function killPortListener() {
+  try {
+    const out = require('child_process').execSync('netstat -ano -p tcp', { encoding: 'utf8', windowsHide: true, timeout: 8000 });
+    const pids = new Set();
+    out.split(/\r?\n/).forEach((line) => {
+      if (!/LISTENING/i.test(line)) return;
+      if (line.indexOf(':' + PORT + ' ') < 0 && !line.includes(':' + PORT + '\t')) return;
+      const m = /\s(\d+)\s*$/.exec(line.trim());
+      if (m) pids.add(m[1]);
+    });
+    pids.forEach((pid) => {
+      try { require('child_process').execSync('taskkill /F /PID ' + pid, { stdio: 'ignore', timeout: 8000, windowsHide: true }); } catch (e) { }
+    });
+    if (pids.size) dbg('结束占用端口 ' + PORT + ' 的进程: ' + Array.from(pids).join(','));
+  } catch (e) { }
+}
+
 function killBrowserProcesses() {
   try {
     const script = path.join(__dirname, 'tools', 'kill-qoj-browser.ps1');
     if (!fs.existsSync(script)) return;
-    spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Profile', PROFILE], { windowsHide: true, timeout: 20000 });
+    spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Profile', PROFILE_MARKER], { windowsHide: true, timeout: 20000 });
   } catch (e) { }
 }
 
