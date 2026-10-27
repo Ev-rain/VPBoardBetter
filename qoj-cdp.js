@@ -126,11 +126,13 @@ async function launch() {
     /* 默认把窗口放到屏幕外：进程照常渲染（Cloudflare 才会放行），但看不到弹出的窗口；
        QOJ_VISIBLE=1 时才放在屏幕里，方便排查问题 */
     visible ? '--window-position=120,90' : '--window-position=-32000,-32000',
-    '--disable-features=Translate,MediaRouter,msEdgeIdentityAvatar',
+    '--disable-features=Translate,MediaRouter,msEdgeIdentityAvatar,CalculateNativeWinOcclusion',
     '--disable-component-update', '--disable-background-networking',
     '--disable-sync', '--disable-default-apps', '--disable-extensions',
     '--disable-breakpad', '--disable-client-side-phishing-detection',
-    '--noerrdialogs', '--disable-session-crashed-bubble'
+    '--noerrdialogs', '--disable-session-crashed-bubble',
+      '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding'
   ];
   dbg('启动浏览器: ' + path.basename(exe));
   const proc = spawn(exe, args, { detached: false, stdio: 'ignore' });
@@ -249,8 +251,26 @@ function clearSession() {
   try { if (fs.existsSync(SESSION_FILE)) fs.unlinkSync(SESSION_FILE); } catch (e) { }
 }
 
-async function evaluate(expr) {
-  const r = await browser.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+function killBrowser() {
+  try { if (browser && browser.ws) browser.ws.close(); } catch (e) { }
+  browser = null;
+  edgeProc = null;
+}
+
+function killBrowserProcesses() {
+  try {
+    const script = path.join(__dirname, 'tools', 'kill-qoj-browser.ps1');
+    if (!fs.existsSync(script)) return;
+    spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Profile', PROFILE], { windowsHide: true, timeout: 20000 });
+  } catch (e) { }
+}
+
+async function evaluate(expr, timeoutMs) {
+  const limit = timeoutMs || 15000;
+  const r = await Promise.race([
+    browser.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('页面无响应（' + limit + 'ms），浏览器可能被后台冻结')), limit))
+  ]).catch((e) => { killBrowser(); killBrowserProcesses(); throw e; });
   if (!r || !r.result) return null;
   if (r.result.exceptionDetails) {
     const ex = r.result.exceptionDetails;
@@ -502,10 +522,23 @@ async function problems(contestUrl) {
 /* ---------------- 比赛列表 ---------------- */
 
 let contestsCache = { ts: 0, list: [] };
+const CONTESTS_CACHE_FILE = path.join(__dirname, '_qoj-contests.cache.json');
 
-async function contests() {
+function readContestsDisk() {
+  try {
+    if (!fs.existsSync(CONTESTS_CACHE_FILE)) return null;
+    const j = JSON.parse(fs.readFileSync(CONTESTS_CACHE_FILE, 'utf8'));
+    if (!j || !Array.isArray(j.list) || !j.list.length) return null;
+    return j;
+  } catch (e) { return null; }
+}
+
+function writeContestsDisk(list) {
+  try { fs.writeFileSync(CONTESTS_CACHE_FILE, JSON.stringify({ ts: Date.now(), list: list }), 'utf8'); } catch (e) { }
+}
+
+async function fetchContestsOnce() {
   const now = Date.now();
-  if (contestsCache.list.length && now - contestsCache.ts < 10 * 60 * 1000) return contestsCache.list;
   if (!browser) await connect();
   let here = '';
   try { here = String(await evaluate('location.href')); } catch (e) { here = ''; }
@@ -534,8 +567,33 @@ async function contests() {
   try { list = JSON.parse(raw || '[]'); } catch (e) { list = []; }
   list.sort((a, b) => Number(b.id) - Number(a.id));
   contestsCache = { ts: now, list };
+  writeContestsDisk(list);
   dbg('比赛列表 ' + list.length + ' 场');
   return list;
+}
+
+async function contests() {
+  const now = Date.now();
+  if (contestsCache.list.length && now - contestsCache.ts < 10 * 60 * 1000) return contestsCache.list;
+  try {
+    return await fetchContestsOnce();
+  } catch (e) {
+    dbg('取比赛列表失败: ' + e.message);
+    killBrowser();
+    try {
+      const list = await fetchContestsOnce();
+      return list;
+    } catch (e2) {
+      dbg('重试仍失败: ' + e2.message);
+      const disk = readContestsDisk();
+      if (disk) {
+        dbg('使用本地缓存的比赛列表（' + disk.list.length + ' 场）');
+        contestsCache = { ts: disk.ts, list: disk.list };
+        return disk.list;
+      }
+      throw e2;
+    }
+  }
 }
 
 /* ---------------- 提交 ---------------- */
