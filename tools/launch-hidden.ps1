@@ -150,18 +150,18 @@ $edgeArgs = @(
   '--no-default-browser-check',
 
   '--disable-sync',
-
   '--disable-component-update',
-
+  '--disable-component-extensions-with-background-pages',
+  '--disable-default-apps',
+  '--disable-extensions',
+  '--disable-client-side-phishing-detection',
   '--disable-background-networking',
-
   '--disable-breakpad',
-
   '--disable-domain-reliability',
-
   '--no-pings',
-
-  '--disable-features=Translate,MediaRouter,EdgeShoppingAssistant,msEdgeWallet'
+  '--no-service-autorun',
+  '--disable-background-mode',
+  '--disable-features=Translate,MediaRouter,EdgeShoppingAssistant,msEdgeWallet,msEdgeSidebar,EdgeCollections,EdgeDiscover,msEdgeIdentityAvatar,EdgeEntityExtraction,EdgeAutofillAssistant,OptimizationHints,InterestFeedContentSuggestions,CalculateNativeWinOcclusion,msEdgeRewards,EdgeUserFeedback'
 )
 
 Log ('启动 Edge: size ' + $winW + 'x' + $winH + ' @ ' + $winX + ',' + $winY)
