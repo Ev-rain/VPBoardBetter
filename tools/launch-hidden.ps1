@@ -115,6 +115,18 @@ if (-not (Test-Path $profile)) {
   }
 }
 
+
+# Clean regenerable Edge caches before every launch (components, crashpad, wallet/shopping,
+# GPU/shader caches). Without this .app-profile grows to hundreds of MB in a few runs.
+# Keeps Default\Local Storage (my team / QOJ links / last contest).
+try {
+  $pruneScript = Join-Path $PSScriptRoot 'prune-profile.ps1'
+  if (Test-Path $pruneScript) {
+    $freed = & $pruneScript -Profile $profile
+    if ($freed -gt 0) { Log ('已清理配置缓存: ' + [math]::Round($freed, 1) + ' MB') }
+  }
+} catch { Log ('清理配置缓存失败: ' + $_.Exception.Message) }
+
 # 上次关窗时的尺寸与位置（页面通过 POST /api/window 写进 _window.json）
 $winW = 1400; $winH = 860; $winX = 150; $winY = 90
 $winFile = Join-Path $root '_window.json'
@@ -136,8 +148,20 @@ $edgeArgs = @(
   "--user-data-dir=$profile",
   '--no-first-run',
   '--no-default-browser-check',
+
   '--disable-sync',
-  '--disable-features=Translate,MediaRouter'
+
+  '--disable-component-update',
+
+  '--disable-background-networking',
+
+  '--disable-breakpad',
+
+  '--disable-domain-reliability',
+
+  '--no-pings',
+
+  '--disable-features=Translate,MediaRouter,EdgeShoppingAssistant,msEdgeWallet'
 )
 
 Log ('启动 Edge: size ' + $winW + 'x' + $winH + ' @ ' + $winX + ',' + $winY)
