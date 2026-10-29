@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /* ============================================================
    server.js — 本地启动器（零依赖）
-   1) 静态托管本目录（index.html + assets + fixtures）
-   2) /api/health            启动器自检
-   3) /api/proxy?url=…       白名单 CORS 代理（board.xcpcio.com / xcpcio.github.io）
-   4) /api/qoj/*             用本机 Edge + DevTools 协议驱动 QOJ（绕过 Cloudflare 人机验证）
+   1) 静态托管本目录（index.html + assets + fixtures，gzip + ETag + 304）
+   2) /api/health                自检：build / features（前端据此识别旧版本服务）
+   3) /api/proxy?url=…           白名单 CORS 代理（board.xcpcio.com / xcpcio.github.io）
+   4) /api/boards?q=…            比赛列表（GitHub tree + 各场 config.json，内存 + 磁盘缓存 6h）
+   5) /api/window                窗口尺寸/位置记忆（读写 _window.json）
+   6) /api/open?url=…            用系统默认浏览器打开白名单链接（只允许 qoj.ac）
+   7) /api/qoj/*                 用本机 Edge + DevTools 协议驱动 QOJ（绕过 Cloudflare）
+        status / login / logout / contests / problems / submit / submission / editorial
    只监听 127.0.0.1。
    ============================================================ */
 'use strict';
@@ -15,13 +19,12 @@ const fs = require('fs');
 const cdp = require('./qoj-cdp.js');
 const path = require('path');
 const { execFile } = require('child_process');
-const { URL, URLSearchParams } = require('url');
+const { URL } = require('url');
 
 const ROOT = __dirname;
 const BUILD = '2026-10-29';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = '127.0.0.1';
-const QOJ_ORIGIN = 'https://qoj.ac';
 const PROXY_HOSTS = new Set(['board.xcpcio.com', 'xcpcio.github.io']);
 const MAX_PROXY_BYTES = 30 * 1024 * 1024;
 
@@ -114,25 +117,6 @@ function rawRequest(method, urlStr, opts) {
   });
 }
 
-/** 手动跟随重定向，保留 cookie */
-async function fetchPage(urlStr, opts) {
-  opts = opts || {};
-  let current = urlStr;
-  for (let i = 0; i < 6; i++) {
-    const r = await rawRequest(opts.method || 'GET', current, opts);
-    if (r.status === 403 && /Just a moment|challenge-platform|cf-challenge/i.test(r.body)) {
-      throw new Error('QOJ 被 Cloudflare 人机验证拦截（cf-ray: ' + (r.headers['cf-ray'] || '?') + '），纯 HTTP 请求过不去；请用浏览器完成验证，或先用手动「记录提交」');
-    }
-    if ([301, 302, 303, 307, 308].includes(r.status) && r.headers.location) {
-      current = new URL(r.headers.location, current).toString();
-      opts = Object.assign({}, opts, { method: 'GET', body: null, headers: Object.assign({}, opts.headers, { 'Content-Type': undefined }) });
-      continue;
-    }
-    return r;
-  }
-  throw new Error('重定向次数过多');
-}
-
 /* ---------------- 榜单列表（XCPCIO 仓库 → 可搜索的比赛清单） ---------------- */
 
 const BOARD_CACHE_FILE = path.join(ROOT, '_boards.cache.json');
@@ -196,298 +180,6 @@ async function boardIndex(force) {
     } catch (e2) { /* ignore */ }
     throw e;
   }
-}
-
-/* ---------------- 极简 HTML 解析 ---------------- */
-
-function parseAttrs(s) {
-  const attrs = {};
-  const re = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
-  let m;
-  while ((m = re.exec(s))) {
-    const name = m[1].toLowerCase();
-    attrs[name] = m[2] != null ? m[2] : m[3] != null ? m[3] : m[4] != null ? m[4] : '';
-  }
-  return attrs;
-}
-
-function parseForms(html) {
-  const forms = [];
-  const re = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const attrs = parseAttrs(m[1]);
-    const inner = m[2];
-    const fields = [];
-    let im;
-    const inputRe = /<input\b([^>]*?)\/?>/gi;
-    while ((im = inputRe.exec(inner))) {
-      const a = parseAttrs(im[1]);
-      if (!a.name) continue;
-      fields.push({ tag: 'input', name: a.name, type: (a.type || 'text').toLowerCase(), value: a.value != null ? a.value : '', checked: 'checked' in a });
-    }
-    const taRe = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
-    while ((im = taRe.exec(inner))) {
-      const a = parseAttrs(im[1]);
-      if (!a.name) continue;
-      fields.push({ tag: 'textarea', name: a.name, type: 'textarea', value: im[2] });
-    }
-    const selRe = /<select\b([^>]*)>([\s\S]*?)<\/select>/gi;
-    while ((im = selRe.exec(inner))) {
-      const a = parseAttrs(im[1]);
-      if (!a.name) continue;
-      const options = [];
-      let om;
-      const optRe = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
-      while ((om = optRe.exec(im[2]))) {
-        const oa = parseAttrs(om[1]);
-        options.push({ value: oa.value != null ? oa.value : stripTags(om[2]).trim(), text: stripTags(om[2]).trim(), selected: 'selected' in oa });
-      }
-      fields.push({ tag: 'select', name: a.name, type: 'select', options, value: (options.find(o => o.selected) || options[0] || {}).value || '' });
-    }
-    const btnRe = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
-    while ((im = btnRe.exec(inner))) {
-      const a = parseAttrs(im[1]);
-      if (!a.name) continue;
-      fields.push({ tag: 'button', name: a.name, type: (a.type || 'submit').toLowerCase(), value: a.value != null ? a.value : stripTags(im[2]).trim() });
-    }
-    forms.push({
-      attrs,
-      action: attrs.action || '',
-      method: (attrs.method || 'get').toLowerCase(),
-      fields
-    });
-  }
-  return forms;
-}
-
-function stripTags(s) {
-  return String(s).replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function findForm(forms, pred) {
-  for (const f of forms) if (pred(f)) return f;
-  return null;
-}
-
-function buildFormBody(form, overrides) {
-  const params = new URLSearchParams();
-  for (const f of form.fields) {
-    if (f.tag === 'button') continue;
-    if (f.type === 'checkbox' || f.type === 'radio') {
-      if (f.checked) params.append(f.name, f.value);
-      continue;
-    }
-    if (f.tag === 'select') { params.append(f.name, f.value || ''); continue; }
-    params.append(f.name, overrides && Object.prototype.hasOwnProperty.call(overrides, f.name) ? overrides[f.name] : f.value || '');
-  }
-  for (const b of form.fields) {
-    if (b.tag === 'button' && b.type === 'submit' && b.name) params.append(b.name, b.value || '');
-  }
-  return params.toString();
-}
-
-/* ---------------- QOJ 会话 ---------------- */
-
-const qoj = {
-  loggedIn: false,
-  user: '',
-  languages: [],
-  lastError: '',
-  debug: []
-};
-
-function qojDbg(line) {
-  qoj.debug.push(line);
-  if (qoj.debug.length > 120) qoj.debug.shift();
-  log('[qoj]', line);
-}
-
-function verdictFromText(text) {
-  const t = text || '';
-  const table = [
-    ['Accepted', 'Accepted'],
-    ['Wrong Answer', 'Wrong Answer'],
-    ['Time Limit Exceeded', 'Time Limit Exceeded'],
-    ['Memory Limit Exceeded', 'Memory Limit Exceeded'],
-    ['Runtime Error', 'Runtime Error'],
-    ['Compilation Error', 'Compilation Error'],
-    ['Compile Error', 'Compilation Error'],
-    ['Presentation Error', 'Presentation Error'],
-    ['Output Limit Exceeded', 'Output Limit Exceeded'],
-    ['Idleness Limit Exceeded', 'Idleness Limit Exceeded'],
-    ['Judgement Failed', 'Judgement Failed'],
-    ['Judge Failed', 'Judgement Failed'],
-    ['System Error', 'System Error'],
-    ['Waiting', 'Waiting'],
-    ['Queued', 'Waiting'],
-    ['Pending', 'Waiting'],
-    ['Compiling', 'Compiling'],
-    ['Running', 'Running'],
-    ['Judging', 'Judging']
-  ];
-  for (const [needle, verdict] of table) {
-    if (t.includes(needle)) return verdict;
-  }
-  return '';
-}
-
-async function qojLogin(username, password) {
-  qoj.debug = [];
-  const page = await fetchPage(QOJ_ORIGIN + '/login');
-  qojDbg('GET /login -> ' + page.status + ' (' + page.body.length + 'B)');
-  const forms = parseForms(page.body);
-  qojDbg('发现 ' + forms.length + ' 个表单');
-  const form = findForm(forms, f => f.fields.some(x => x.type === 'password'));
-  if (!form) {
-    qoj.lastError = '登录页没有找到带密码框的表单';
-    qojDbg(qoj.lastError);
-    const snippet = stripTags(page.body).slice(0, 200);
-    throw new Error(qoj.lastError + (snippet ? '（页面片段：' + snippet + '）' : ''));
-  }
-  const userField = form.fields.find(x => x.type !== 'password' && x.type !== 'hidden' && /user|name|login|email|id/i.test(x.name)) ||
-    form.fields.find(x => x.type === 'text');
-  const passField = form.fields.find(x => x.type === 'password');
-  if (!userField || !passField) throw new Error('无法识别用户名/密码字段');
-  const action = new URL(form.action || '/login', QOJ_ORIGIN + '/login').toString();
-  qojDbg('POST ' + action + ' 字段: ' + userField.name + ' / ' + passField.name);
-  const body = buildFormBody(form, { [userField.name]: username, [passField.name]: password });
-  const res = await fetchPage(action, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': QOJ_ORIGIN + '/login' } });
-  const text = stripTags(res.body);
-  qojDbg('登录响应 ' + res.status + '，长度 ' + res.body.length);
-
-  if (/wrong password|invalid|密码错误|用户名或密码|Login failed|error/i.test(text) && !/logout|退出|我的提交|My submissions/i.test(text)) {
-    const err = (text.match(/(wrong password[^.]*|用户名或密码[^。]*|密码错误[^。]*|invalid[^.]*)/i) || [])[1];
-    qoj.lastError = err || '登录失败';
-    throw new Error(qoj.lastError);
-  }
-  const home = await fetchPage(QOJ_ORIGIN + '/');
-  const homeText = stripTags(home.body);
-  qoj.loggedIn = /logout|退出|Sign out/i.test(homeText) || !/type="password"/i.test(home.body);
-  if (!qoj.loggedIn) throw new Error('登录后仍显示未登录状态');
-  const m = home.body.match(/href="\/user\/profile\/([^"]+)"/) || home.body.match(/\/user\/profile\/([^"?]+)/);
-  qoj.user = m ? decodeURIComponent(m[1]) : username;
-  qoj.lastError = '';
-  qojDbg('登录成功: ' + qoj.user);
-  return { user: qoj.user };
-}
-
-async function qojLogout() {
-  qoj.loggedIn = false;
-  qoj.user = '';
-  cookieJar.delete('qoj.ac');
-  return { ok: true };
-}
-
-async function qojProblems(contestUrl) {
-  const url = new URL(contestUrl, QOJ_ORIGIN).toString();
-  qojDbg('GET ' + url);
-  const page = await fetchPage(url);
-  const html = page.body;
-  qojDbg('比赛页 ' + page.status + '，长度 ' + html.length);
-  const out = [];
-  const seen = new Set();
-  const linkRe = /<a\b[^>]*href="([^"]*\/problem\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-  let m;
-  while ((m = linkRe.exec(html))) {
-    const id = m[2];
-    if (seen.has(id)) continue;
-    seen.add(id);
-    const text = stripTags(m[3]).trim();
-    const label = (text.match(/^[A-Z]\d?/) || [])[0] || '';
-    out.push({ id, label: label || text.slice(0, 8), title: text });
-  }
-  if (!out.length) {
-    const idRe = /\/problem\/(\d+)/g;
-    let mm;
-    while ((mm = idRe.exec(html))) {
-      if (!seen.has(mm[1])) { seen.add(mm[1]); out.push({ id: mm[1], label: '', title: '' }); }
-    }
-  }
-  out.sort((a, b) => Number(a.id) - Number(b.id));
-  qojDbg('解析到 ' + out.length + ' 道题');
-  return out.slice(0, 40);
-}
-
-async function qojSubmit({ problemId, language, code }) {
-  if (!/^\d+$/.test(String(problemId || ''))) throw new Error('题目 ID 必须是数字');
-  const problemUrl = QOJ_ORIGIN + '/problem/' + problemId;
-  qojDbg('GET ' + problemUrl);
-  const page = await fetchPage(problemUrl);
-  const forms = parseForms(page.body);
-  qojDbg('题面页 ' + page.status + '，' + forms.length + ' 个表单');
-  const form = findForm(forms, f => f.fields.some(x => x.tag === 'textarea')) ||
-    findForm(forms, f => f.fields.some(x => x.type === 'file'));
-  if (!form) {
-    qoj.lastError = '题面页没有找到提交表单';
-    throw new Error(qoj.lastError);
-  }
-  const overrides = {};
-  for (const f of form.fields) {
-    if (f.tag === 'textarea') overrides[f.name] = code;
-    if (f.tag === 'select' && /lang/i.test(f.name)) {
-      const opt = f.options.find(o => o.value === language || o.text === language) ||
-        f.options.find(o => o.text.toLowerCase().includes(String(language).toLowerCase())) || f.options[0];
-      overrides[f.name] = opt ? opt.value : language;
-      qojDbg('语言 ' + language + ' -> ' + (opt ? opt.text + '(' + opt.value + ')' : '原样提交'));
-    }
-  }
-  const action = new URL(form.action || problemUrl, problemUrl).toString();
-  const body = buildFormBody(form, overrides);
-  qojDbg('POST ' + action + '，' + body.length + ' 字节');
-  const res = await fetchPage(action, { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': problemUrl } });
-  qojDbg('提交响应 ' + res.status);
-  const hay = res.body + '\n' + (res.headers.location || '');
-  const idm = hay.match(/\/submission\/(\d+)/);
-  if (!idm) {
-    const text = stripTags(res.body).slice(0, 300);
-    throw new Error('提交后没有找到 submission id（页面片段：' + text + '）');
-  }
-  return { submissionId: Number(idm[1]) };
-}
-
-async function qojSubmission(id) {
-  const url = QOJ_ORIGIN + '/submission/' + encodeURIComponent(id);
-  const page = await fetchPage(url);
-  const text = stripTags(page.body);
-  const verdict = verdictFromText(text);
-  const timeM = text.match(/(\d+)\s*ms\b/);
-  const memM = text.match(/(\d+)\s*(KB|MB)\b/);
-  const finished = !!verdict && !/^(Waiting|Compiling|Running|Judging)$/.test(verdict);
-  return {
-    id: Number(id),
-    verdict: verdict || 'Unknown',
-    finished,
-    time: timeM ? timeM[1] + 'ms' : '',
-    memory: memM ? memM[1] + memM[2] : ''
-  };
-}
-
-async function qojStatus() {
-  if (!qoj.loggedIn) {
-    try {
-      const home = await fetchPage(QOJ_ORIGIN + '/');
-      const t = stripTags(home.body);
-      if (/logout|退出|Sign out/i.test(t)) {
-        qoj.loggedIn = true;
-        const m = home.body.match(/\/user\/profile\/([^"?]+)/);
-        if (m) qoj.user = decodeURIComponent(m[1]);
-      }
-    } catch (e) {
-      qojDbg('状态检查失败: ' + e.message);
-    }
-  }
-  return { loggedIn: qoj.loggedIn, user: qoj.user, languages: qoj.languages };
 }
 
 /* ---------------- HTTP 服务器 ---------------- */

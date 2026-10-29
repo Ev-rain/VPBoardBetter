@@ -243,12 +243,12 @@
           <button class="btn primary" id="btnQojSubmit">提交到 QOJ</button>
           <span class="qoj-state" id="qojState"></span>
         </div>
-        <p class="qoj-hint">登录和提交都在后台一个屏幕外的 Edge 里完成（用来过 QOJ 的 Cloudflare 验证），不会弹出窗口；任务栏里的那个浏览器图标不要关。</p>
+        <p class="qoj-hint">登录、提交、查找题解都在后台的 Edge 里完成（用来过 QOJ 的 Cloudflare 验证），不会弹窗、也不占任务栏；只要别把应用本身关掉就行。</p>
       </section>
       <section class="tab-panel" data-panel="account" hidden>
         <div class="qoj-account" id="qojAccount"></div>
         <div class="qoj-mapping" id="qojMapping"></div>
-        <p class="field-hint">账号密码只发送给本机启动器（127.0.0.1），只保存在内存中；关掉启动器即失效。</p>
+        <p class="field-hint">账号密码只发送给本机启动器（127.0.0.1）：用户名会记在本机，密码默认不保存（登录态靠 cookie），勾「记住密码」才会把密码存进本机浏览器。</p>
       </section>
       <section class="tab-panel" data-panel="log" hidden>
         <pre class="qoj-log" id="qojLog"></pre>
@@ -286,7 +286,7 @@
         <li><b>封榜</b>：比赛最后 1 小时不再更新榜单，只显示封榜时的状态；本工具 3 小时模式按比例压缩（5 小时比赛封 36 分钟）。</li>
         <li><b>奖牌</b>：按正式队伍的名次发金 / 银 / 铜，打星队（unofficial）参与排名但不拿奖牌。</li>
         <li><b>一血</b>：每道题第一支通过的队伍，格子上有虚线内框。</li>
-        <li>「我的队伍」与「QOJ 提交」的用法见顶部「我的队伍」和「数据源」两个按钮。</li>
+        <li>「我的队伍」与 QOJ 交题的用法见顶部「我的队伍」按钮，以及「数据源」弹窗里的 QOJ 比赛一行。</li>
       </ul>
       <h3>快捷键</h3>
       <ul class="keys">

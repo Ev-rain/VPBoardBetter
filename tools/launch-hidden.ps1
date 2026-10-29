@@ -137,10 +137,8 @@ if (-not (Test-Path $profile)) {
   }
 }
 
-
-# Clean regenerable Edge caches before every launch (components, crashpad, wallet/shopping,
-# GPU/shader caches). Without this .app-profile grows to hundreds of MB in a few runs.
-# Keeps Default\Local Storage (my team / QOJ links / last contest).
+# 每次启动前清掉可再生的 Edge 缓存（组件、崩溃上报、钱包/购物、GPU/着色器缓存等）。
+# 不清的话 .app-profile 几轮就会涨到几百 MB；Default\Local Storage（我的队伍 / QOJ 关联 / 上次比赛）保留。
 try {
   $pruneScript = Join-Path $PSScriptRoot 'prune-profile.ps1'
   if (Test-Path $pruneScript) {
@@ -150,7 +148,7 @@ try {
 } catch { Log ('清理配置缓存失败: ' + $_.Exception.Message) }
 
 # 上次关窗时的尺寸与位置（页面通过 POST /api/window 写进 _window.json）
-$winW = 1400; $winH = 860; $winX = 150; $winY = 90
+$winW = 1440; $winH = 900; $winX = 150; $winY = 90
 $winFile = Join-Path $root '_window.json'
 if (Test-Path $winFile) {
   try {
@@ -186,7 +184,7 @@ $edgeArgs = @(
   '--disable-features=Translate,MediaRouter,EdgeShoppingAssistant,msEdgeWallet,msEdgeSidebar,EdgeCollections,EdgeDiscover,msEdgeIdentityAvatar,EdgeEntityExtraction,EdgeAutofillAssistant,OptimizationHints,InterestFeedContentSuggestions,CalculateNativeWinOcclusion,msEdgeRewards,EdgeUserFeedback'
 )
 
-Log ('启动 Edge: size ' + $winW + 'x' + $winH + ' @ ' + $winX + ',' + $winY)
+Log ('启动 Edge：' + $winW + 'x' + $winH + ' @ ' + $winX + ',' + $winY)
 if ($edge) {
   try {
     Start-Process -FilePath $edge -ArgumentList $edgeArgs -ErrorAction Stop | Out-Null

@@ -22,6 +22,7 @@ _srv2.*
 tools/launcher/VPBoardBetter.exe
 _launch.log
 
-
 *.zip
 _qoj-contests.cache.json
+
+_server.out

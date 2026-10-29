@@ -12,15 +12,18 @@ assets/core.js        数据归一化、时间轴缩放、排名计算（UMD，�
 assets/data.js        在线 / 本地 / 示例数据加载
 assets/qoj.js         QOJ 客户端（走本地服务）
 assets/app.js         界面、播放时钟、渲染、抽屉、弹窗
-server.js             零依赖本地服务：静态托管 + /api/proxy + /api/window + /api/boards + /api/qoj/*
+server.js             零依赖本地服务：静态托管（gzip/ETag/304）+ /api/health + /api/proxy
+                      + /api/boards + /api/window + /api/open + /api/qoj/*
 qoj-cdp.js            QOJ 浏览器驱动（临时 Edge + DevTools 协议，登录态存 qoj-session.json）
 start.bat             隐藏启动本地服务 + Edge 应用窗口（不留 cmd 窗口）
 stop.bat              关闭本地服务
 launch.vbs            隐藏启动的桥（wscript 调 PowerShell，纯 ASCII）
 VPBoardBetter.exe     图形启动器：asInvoker（不需管理员），检测 Low IL 后给提示；正常时转给 start.bat
 tools/launcher/       exe 源码（Program.cs）、图标与清单，用 tools/build-exe.ps1 重新生成
-tools/launch-hidden.ps1  真正干活的部分：等端口就绪 → 按 _window.json 开 Edge 窗口
+tools/launch-hidden.ps1  真正干活的部分：识别旧版本服务 → 等端口就绪 → 按 _window.json 开 Edge 窗口
 tools/stop-server.ps1    结束占用端口的进程
+tools/prune-profile.ps1  清理 `.app-profile` 里可再生的浏览器缓存（启动前调用）
+tools/kill-qoj-browser.ps1 兜底：结束 QOJ 用的后台 Edge
 tools/build-exe.ps1      渲染图标 → 生成 ico → csc 编译 exe（需要 .NET Framework 的 csc.exe）
 tools/test-core.js       核心算法自测（node tools/test-core.js）
 tools/hide-edge-window.ps1 把 QOJ 用的 Edge 窗口 SW_HIDE（连任务栏按钮一起去掉）
@@ -47,9 +50,10 @@ fixtures/                真实比赛数据样例（2025 ICPC 南京站，359 �
 
 ## 缓存策略
 
-- 静态资源：`gzip` + `ETag` + `304`（`app.js` 77 KB → 21 KB，二次打开 0 字节响应）。
+- 静态资源：`gzip` + `ETag` + `304`（`app.js` 84 KB → 23 KB，二次打开 0 字节响应）。
 - 在线榜单数据：前端直连 `xcpcio.github.io`，靠浏览器 HTTP 缓存，不重复下载 490 KB 的 `run.json`。
-- 比赛列表：`/api/boards` 内存 + `_boards.cache.json` 缓存 6 小时（响应 `max-age=300`）；`/api/qoj/contests` 缓存 10 分钟。
+- 比赛列表：`/api/boards` 内存 + `_boards.cache.json` 缓存 6 小时（响应 `max-age=300`）；`/api/qoj/contests` 缓存 10 分钟（`_qoj-contests.cache.json`）。
+- 服务版本：`/api/health` 带 `build` 和 `features`，前端发现缺 `editorial` 就提示「本地服务是旧版本」，启动器也会结束/提示旧 node，避免新前端连旧接口。
 - 渲染：榜单只在「秒」变化时重算；实测 359 队一次重算 0.7–0.9 ms。
 
 ## QOJ 集成
@@ -65,6 +69,17 @@ QOJ 前面挂着 Cloudflare 人机验证，纯 HTTP 与 headless 都会被挡在
 `powershell -File tools\hide-edge-window.ps1 -Profile vpb-qoj -Action show` 叫出来（按临时目录名前缀匹配）。
 
 登录态判断用 `a[href*="/logout"]`。输出型题目（例如 `#1 I/O Test`）不支持源码提交，会得到 Compile Error。
+
+评测结果怎么看：`submission()` 优先读提交页的测试点卡片（`#details_details_accordion` 里每个 `.card` 的 `Test #N / score / 判定`），
+只要有一个点不是 `Accepted` 就按那个点判整题失败——ICPC 规则下没有“部分分通过”。页面上不显示是第几个点错的，
+与正式比赛一致；测试点信息只在本机日志里。
+
+### 查看题解
+
+比赛回放到终点后，`ensureEditorial()` 会请求 `/api/qoj/editorial?contest=<链接>`，在 QOJ 比赛页里找
+`/tutorial|题解|editorial|solution/i` 的链接，按 `(zh-cn)` / `(en)` 后缀选中文优先、没有再用英文；结果按比赛
+写进 localStorage，点按钮时由 `/api/open`（白名单只放 `qoj.ac`）用系统默认浏览器打开。热身赛通常没有题解附件，
+接口会返回空列表，按钮提示「这场比赛在 QOJ 上没有题解附件」。
 
 ## 磁盘占用
 

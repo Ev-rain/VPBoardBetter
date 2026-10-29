@@ -251,12 +251,6 @@
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) { /* ignore */ }
   }
 
-  function targetOf(source) {
-    if (!source) return '';
-    if (/^https?:\/\//.test(source)) return source;
-    return '';
-  }
-
   root.Data = {
     loadOnline: loadOnline,
     loadFiles: loadFiles,

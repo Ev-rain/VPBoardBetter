@@ -59,7 +59,6 @@
     source: '',
     key: '',
     mode: 'full',
-    speed: 1,
     playing: false,
     elapsed: 0,
     finished: false,
@@ -84,7 +83,6 @@
     try {
       var p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
       if (p.mode === 'full' || p.mode === '3h') state.mode = p.mode;
-      if (p.speed) state.speed = Number(p.speed) || 1;
       if (typeof p.officialOnly === 'boolean') state.officialOnly = p.officialOnly;
       if (typeof p.showMedals === 'boolean') state.showMedals = p.showMedals;
       return p;
@@ -97,7 +95,7 @@
     saveTimer = setTimeout(function () {
       try {
         var p = {
-          mode: state.mode, speed: state.speed,
+          mode: state.mode,
           officialOnly: state.officialOnly, showMedals: state.showMedals,
           contestPath: state.contestInput || '', elapsed: state.elapsed, key: state.key
         };
@@ -223,7 +221,7 @@
       if (!state.lastFrame) state.lastFrame = ts;
       var dt = clamp(ts - state.lastFrame, 0, 300);
       state.lastFrame = ts;
-      state.elapsed += dt * state.speed;
+      state.elapsed += dt;
       if (state.elapsed >= state.view.virtualDuration) {
         finish();
         renderBoard(true);
@@ -813,10 +811,6 @@ function updateStatus() {
   }
 
   /* ---------------- 我的队伍 ---------------- */
-  function myTeamRow() {
-    if (!state.myTeam || !state.standings) return null;
-    return state.standings.rows.find(function (r) { return r.team.id === state.myTeam.id; }) || null;
-  }
 
   function openMyTeam() {
     if (!state.dataset) { toast('先加载一场比赛', 'err'); return; }
@@ -1350,8 +1344,8 @@ function updateStatus() {
         var feats = info.features || [];
         if (feats.indexOf('editorial') < 0) {
           state.qojStaleNotified = true;
-          $('#statusRight').textContent = '本地服务是旧版本 · 请用管理员身份运行 stop.bat 后重开';
-          toast('本地服务还是旧版本：关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+          $('#statusRight').textContent = '本地服务是旧版本 · 关掉窗口后重新打开';
+          toast('本地服务还是旧版本：关掉应用窗口，先运行 stop.bat，再重新打开', 'err');
         } else {
           $('#statusRight').textContent = '本地启动器已连接 · QOJ 可用';
         }
@@ -1483,7 +1477,7 @@ function updateStatus() {
     if (!QOJ.available) { toast('需要本地启动器才能查找题解', 'err'); return Promise.resolve(null); }
     if (qojServerStale()) {
       qojLog('本地服务是旧版本（health 里没有 editorial）');
-      toast('本地服务还是旧版本：请关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+      toast('本地服务还是旧版本：请关掉应用窗口，先运行 stop.bat，再重新打开', 'err');
       return Promise.resolve(null);
     }
     if (c.editorialErrAt && Date.now() - c.editorialErrAt < 60000) return Promise.resolve(null);
@@ -1497,7 +1491,7 @@ function updateStatus() {
       c.editorialErrAt = Date.now();
       qojLog('取题解失败：' + e.message);
       if (/unknown action|404/i.test(e.message)) {
-        toast('本地服务还是旧版本：请关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+        toast('本地服务还是旧版本：请关掉应用窗口，先运行 stop.bat，再重新打开', 'err');
       } else {
         toast('查找题解失败：' + e.message, 'err');
       }
