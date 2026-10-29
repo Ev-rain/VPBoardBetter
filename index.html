@@ -93,7 +93,7 @@
       <div class="empty-card">
         <div class="empty-kicker">VP BOARD BETTER</div>
         <h2>虚拟榜单回放</h2>
-        <p>加载一场比赛的榜单数据，用 5 小时原速或 3 小时等比例压缩的进度观看完整比赛过程。封榜时间同步缩放（5h 比赛 3h 模式：封榜 36 分钟）。</p>
+        <p>用 5 小时原速或 3 小时压缩回放整场比赛，封榜时间同步缩放。</p>
         <div class="empty-actions">
           <button class="btn primary" id="emptyLoad">加载榜单数据</button>
           <button class="btn ghost" id="emptyFiles">选择本地文件</button>
@@ -138,31 +138,31 @@
             <button class="btn small ghost" id="btnDataBoardPick" title="从 XCPCIO 榜单列表里挑一场">选择榜单</button>
           </div>
         </label>
-        <div class="field-hint">例：<code>icpc/50th/nanjing</code> · <code>ccpc/2025/final</code> · 也支持任意能访问 config/team/run.json 的目录</div>
+        <div class="field-hint">例：<code>icpc/50th/nanjing</code> · <code>ccpc/2025/final</code></div>
         <div class="qoj-picker" id="boardPicker" hidden>
           <div class="qoj-picker-head">
             <input id="boardPickerSearch" type="text" spellcheck="false" placeholder="搜索榜单：南京 / nanjing / icpc/50th / 2025">
             <button class="btn small ghost" id="btnBoardPickerClose">收起</button>
           </div>
           <div class="qoj-picker-list" id="boardPickerList"></div>
-          <div class="qoj-picker-tip" id="boardPickerTip">从 XCPCIO 的榜单列表里挑，点一行就填进上面的路径。</div>
+          <div class="qoj-picker-tip" id="boardPickerTip">点一行填入上面的路径。</div>
         </div>
         <div class="qoj-contest">
           <label class="field grow">
             <span>这场比赛对应的 QOJ 比赛（可选）</span>
             <input id="dataQoj" type="text" spellcheck="false" placeholder="https://qoj.ac/contest/4597，或直接填 4597">
           </label>
-          <button class="btn small ghost" id="btnDataQojDetect" title="用榜单路径里的赛站名（如 nanjing）在 QOJ 搜索；没加载榜单也能在这里直接搜比赛名">搜索这场比赛</button>
+          <button class="btn small ghost" id="btnDataQojDetect" title="用赛站名搜索这场比赛">搜索这场比赛</button>
           <button class="btn small ghost" id="btnDataQojPick" title="从 QOJ 比赛列表里挑一场">选择比赛</button>
         </div>
-        <div class="field-hint">只属于这场比赛：A/B/C 会映射到这里的 QOJ 题目，换一场比赛就换一条链接，各自记住各自的。不知道链接就点「搜索这场比赛」用赛站名搜，或「选择比赛」浏览最近比赛。</div>
+        <div class="field-hint">只对这场比赛有效；A/B/C 映射到这里的 QOJ 题目。</div>
         <div class="qoj-picker" id="qojPicker" hidden>
           <div class="qoj-picker-head">
             <input id="qojPickerSearch" type="text" spellcheck="false" placeholder="搜索比赛：nanjing / 南京 / 4597">
             <button class="btn small ghost" id="btnQojPickerClose">收起</button>
           </div>
           <div class="qoj-picker-list" id="qojPickerList"></div>
-          <div class="qoj-picker-tip" id="qojPickerTip">会从 QOJ 的比赛列表里搜，点一行就填进上面的链接。</div>
+          <div class="qoj-picker-tip" id="qojPickerTip">点一行填入上面的链接。</div>
         </div>
         <div class="recent" id="recentList"></div>
         <div class="load-status" id="loadStatus"></div>
@@ -243,12 +243,11 @@
           <button class="btn primary" id="btnQojSubmit">提交到 QOJ</button>
           <span class="qoj-state" id="qojState"></span>
         </div>
-        <p class="qoj-hint">登录、提交、查找题解都在后台的 Edge 里完成（用来过 QOJ 的 Cloudflare 验证），不会弹窗、也不占任务栏；只要别把应用本身关掉就行。</p>
       </section>
       <section class="tab-panel" data-panel="account" hidden>
         <div class="qoj-account" id="qojAccount"></div>
         <div class="qoj-mapping" id="qojMapping"></div>
-        <p class="field-hint">账号密码只发送给本机启动器（127.0.0.1）：用户名会记在本机，密码默认不保存（登录态靠 cookie），勾「记住密码」才会把密码存进本机浏览器。</p>
+        <p class="field-hint">密码默认不保存，勾「记住密码」才存到本机。</p>
       </section>
       <section class="tab-panel" data-panel="log" hidden>
         <pre class="qoj-log" id="qojLog"></pre>
@@ -294,7 +293,7 @@
         <li><kbd>←</kbd> <kbd>→</kbd> 后退 / 前进 1 分钟（Shift 为 5 分钟）</li>
         <li><kbd>/</kbd> 聚焦搜索框</li>
       </ul>
-      <p class="muted">比赛播放到结束后，控制条右侧会出现「查看题解」，点它用系统默认浏览器打开这场比赛 QOJ 上的中文题解（没有中文版就开英文版）。</p>
+      <p class="muted">比赛结束后，控制条右侧会出现「查看题解」，点开是 QOJ 上这场的题解（优先中文）。</p>
     </div>
     <div class="modal-foot"><button class="btn primary" data-close>知道了</button></div>
   </div>

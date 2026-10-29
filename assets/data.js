@@ -145,7 +145,7 @@
         var b = bases[j];
         if (!canUseProxy(b)) continue;
         try {
-          onStatus && onStatus('直连失败，改用本地代理 …');
+          onStatus && onStatus('直连失败，改用本地服务重试 …');
           var cfgText = await fetchText(proxyUrl(b + 'config.json'));
           var cfg = parseJson(cfgText, 'config.json');
           var pair = await Promise.allSettled([
@@ -164,7 +164,7 @@
     }
 
     var msg = '加载失败：\n' + errors.map(function (s) { return '· ' + s; }).join('\n');
-    if (!info.available) msg += '\n提示：直接双击打开时浏览器可能拦截跨域请求，可运行 start.bat 用本地启动器打开。';
+    if (!info.available) msg += '\n提示：用 start.bat 打开后可以走本地服务重试。';
     throw new Error(msg);
   }
 

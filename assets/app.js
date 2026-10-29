@@ -827,10 +827,9 @@ function updateStatus() {
 
     if (!state.myTeam) {
       html += '<div class="mt-head"><div class="mt-title">还没有设置我的队伍</div>' +
-        '<div class="mt-sub">设置之后，你会以「我 · 本机」的身份出现在榜单里，提交罚时按榜单时钟计算。</div></div>';
+        '<div class="mt-sub">你将以「我 · 本机」出现在榜单里。</div></div>';
       html += '<div class="mt-actions"><button class="btn primary" id="myCreate">创建我的队伍</button>' +
-        '<button class="btn ghost" id="myJoin">从已有队伍中选择</button></div>' +
-        '<div class="mt-empty">不想另建队伍？也可以「从已有队伍中选择」，直接用榜单里已有的真实队伍。</div>';
+        '<button class="btn ghost" id="myJoin">从已有队伍中选择</button></div>';
       els.drawerBody.innerHTML = html;
       $('#myCreate').addEventListener('click', function () {
         state.myTeam = {
@@ -868,7 +867,7 @@ function updateStatus() {
 
     html += '<div class="dt-section"><h4>我的提交 · ' + state.myRuns.length + '</h4>';
     if (!state.myRuns.length) {
-      html += '<div class="mt-empty">还没有记录。比赛时用「记录提交」把你的 AC/失败记进来，罚时会随榜单时钟累计。</div>';
+      html += '<div class="mt-empty">还没有记录。</div>';
     } else {
       html += '<div class="mt-list">';
       state.myRuns.slice().sort(function (a, b) { return a.t - b.t; }).forEach(function (r, i) {
@@ -891,7 +890,7 @@ function updateStatus() {
           : (state.qoj.hasSession
             ? '<span class="qoj-dot on"></span>已保存登录（用时自动恢复）'
             : '<span class="qoj-dot off"></span>未登录'))
-        : '<span class="qoj-dot"></span>未连接本地启动器（需要 start.bat）') +
+        : '<span class="qoj-dot"></span>未连接本地服务') +
       '　<button class="btn tiny ghost" id="myQojSettings">设置</button></div></div>';
 
     els.drawerBody.innerHTML = html;
@@ -1347,7 +1346,7 @@ function updateStatus() {
           $('#statusRight').textContent = '本地服务是旧版本 · 关掉窗口后重新打开';
           toast('本地服务还是旧版本：关掉应用窗口，先运行 stop.bat，再重新打开', 'err');
         } else {
-          $('#statusRight').textContent = '本地启动器已连接 · QOJ 可用';
+          $('#statusRight').textContent = '';
         }
       } else if (!info.available) {
         $('#statusRight').textContent = '';
@@ -1474,7 +1473,7 @@ function updateStatus() {
     if (!c || !c.url) return Promise.resolve(null);
     if (c.editorial) return Promise.resolve(c.editorial);
     if (state.qoj.editorialPromise) return state.qoj.editorialPromise;
-    if (!QOJ.available) { toast('需要本地启动器才能查找题解', 'err'); return Promise.resolve(null); }
+    if (!QOJ.available) { toast('需要本地服务才能查找题解', 'err'); return Promise.resolve(null); }
     if (qojServerStale()) {
       qojLog('本地服务是旧版本（health 里没有 editorial）');
       toast('本地服务还是旧版本：请关掉应用窗口，先运行 stop.bat，再重新打开', 'err');
@@ -1544,7 +1543,7 @@ function updateStatus() {
       toast(c.editorial && c.editorial.none ? '这场比赛在 QOJ 上没有题解附件' : '还没有拿到题解链接', 'err');
       return;
     }
-    if (!QOJ.available) { toast('需要本地启动器才能用默认浏览器打开', 'err'); return; }
+    if (!QOJ.available) { toast('需要本地服务才能打开浏览器', 'err'); return; }
     try {
       var res = await fetch('/api/open?url=' + encodeURIComponent(c.editorial.url));
       var j = null;
@@ -1665,7 +1664,7 @@ function updateStatus() {
     if (!box) return;
     if (!state.qoj.available) {
       box.innerHTML = '<div style="font-size:12.5px;color:var(--amber);line-height:1.7">' +
-        '没有检测到本地启动器。<br>用 <code>start.bat</code> 打开本页面后，可以在浏览器内直接登录 QOJ、提交并自动记录结果。</div>';
+        '没有连接本地服务，QOJ 相关功能不可用。</div>';
       return;
     }
     if (state.qoj.loggedIn) {
@@ -1737,7 +1736,7 @@ function updateStatus() {
     var s = $('#qojState');
     if (!s) return;
     s.className = 'qoj-state';
-    if (!state.qoj.available) { s.textContent = '本地启动器未连接'; s.classList.add('err'); return; }
+    if (!state.qoj.available) { s.textContent = '未连接本地服务'; s.classList.add('err'); return; }
     if (!state.qoj.loggedIn) { s.textContent = '未登录 QOJ'; return; }
     s.textContent = '已登录 ' + (state.qoj.user || '');
     s.classList.add('ok');
@@ -1812,7 +1811,7 @@ function updateStatus() {
   }
 
   async function searchQojForContest() {
-    if (!state.qoj.available) { toast('需要本地启动器：用 start.bat 打开', 'err'); return; }
+    if (!state.qoj.available) { toast('需要本地服务，请用 start.bat 打开', 'err'); return; }
     var q = qojQueryForContest();
     var startMs = state.dataset && state.dataset.contest && state.dataset.contest.startMs;
     var date = startMs ? qojDateOf(startMs) : '';
@@ -1876,7 +1875,7 @@ function updateStatus() {
     if (!list) return;
     if (!state.qoj.available) {
       list.innerHTML = '';
-      qojPickerTip('需要本地启动器（start.bat）才能读取 QOJ 比赛列表', true);
+      qojPickerTip('需要本地服务才能读取 QOJ 比赛列表', true);
       return;
     }
     var date = q ? '' : (qojPicker.date || '');
@@ -1999,8 +1998,8 @@ function updateStatus() {
     } catch (e) {
       list.innerHTML = '';
       boardPickerTip(/abort/i.test(e.name || e.message || '')
-        ? '榜单列表读取超时：启动器需要联网抓一次 XCPCIO 仓库，请稍后再试'
-        : '读取失败：' + (e.message || e) + '（需要由 start.bat 启动的本地服务）', true);
+        ? '读取超时，请稍后再试'
+        : '读取失败：' + (e.message || e), true);
     } finally {
       clearTimeout(timer);
     }
@@ -2049,7 +2048,7 @@ function updateStatus() {
   }
 
   async function loadQojProblems(url) {
-    if (!state.qoj.available) { toast('需要本地启动器', 'err'); return; }
+    if (!state.qoj.available) { toast('需要本地服务', 'err'); return; }
     try {
       qojLog('读取比赛题目：' + url);
       var r = await QOJ.problems(url);
@@ -2077,7 +2076,7 @@ function updateStatus() {
   }
 
   async function doQojSubmit() {
-    if (!state.qoj.available) { toast('需要本地启动器：用 start.bat 打开', 'err'); return; }
+    if (!state.qoj.available) { toast('需要本地服务，请用 start.bat 打开', 'err'); return; }
     if (!state.qoj.loggedIn) { toast('先登录 QOJ（账号与映射页）', 'err'); return; }
     var c = qojContest();
     if (!c.url) { toast('先在「比赛」那一行关联这场比赛的 QOJ 链接', 'err'); return; }
