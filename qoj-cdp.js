@@ -952,8 +952,10 @@ async function submission(id) {
 }
 
 async function status() {
+  let hasSession = false;
+  try { hasSession = fs.existsSync(SESSION_FILE); } catch (e) { hasSession = false; }
   if (!browser || !browser.ws || browser.ws.readyState !== 1) {
-    return { loggedIn: false, user: '', url: '', browser: 'stopped' };
+    return { loggedIn: false, user: '', url: '', browser: 'stopped', hasSession: hasSession };
   }
   try {
     if (await isLoggedIn()) {
@@ -966,7 +968,7 @@ async function status() {
   } catch (e) { }
   let url = '';
   try { url = String((await evaluate('location.href')) || ''); } catch (e) { }
-  return { loggedIn: state.loggedIn, user: state.user, url: url, browser: 'running' };
+  return { loggedIn: state.loggedIn, user: state.user, url: url, browser: 'running', hasSession: hasSession };
 }
 
 function close() {

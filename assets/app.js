@@ -275,6 +275,8 @@
     els.tbody.innerHTML = '';
     updatePlayButton();
     updateClock();
+    editorialShown = null;
+    updateEditorialBtn();
     renderBoard(true);
     updateStatus();
 
@@ -820,6 +822,7 @@ function updateStatus() {
     if (!state.dataset) { toast('先加载一场比赛', 'err'); return; }
     openDrawer('my', '我的队伍');
     renderMyTeamDrawer();
+    refreshQojStatus();
   }
 
   function renderMyTeamDrawer() {
@@ -889,7 +892,11 @@ function updateStatus() {
 
     html += '<div class="dt-section"><h4>QOJ</h4><div style="font-size:12px;color:var(--text-mute)">' +
       (state.qoj.available
-        ? (state.qoj.loggedIn ? '<span class="qoj-dot on"></span>已登录 ' + esc(state.qoj.user || '') : '<span class="qoj-dot off"></span>未登录')
+        ? (state.qoj.loggedIn
+          ? '<span class="qoj-dot on"></span>已登录 ' + esc(state.qoj.user || '')
+          : (state.qoj.hasSession
+            ? '<span class="qoj-dot on"></span>已保存登录（用时自动恢复）'
+            : '<span class="qoj-dot off"></span>未登录'))
         : '<span class="qoj-dot"></span>未连接本地启动器（需要 start.bat）') +
       '　<button class="btn tiny ghost" id="myQojSettings">设置</button></div></div>';
 
@@ -1342,12 +1349,13 @@ function updateStatus() {
       $('#statusRight').textContent = info.available ? '本地启动器已连接 · QOJ 可用' : '';
       if (info.available) {
         setTimeout(reportWindowSize, 1500);
+        // 有些情况下（窗口被遮挡/由外部 Win32 移动）resize 事件会被合并或延迟，定时兜底
+        setInterval(reportWindowSize, 2500);
+        refreshQojStatus();
         window.addEventListener('resize', function () {
           clearTimeout(reportWindowSize._t);
           reportWindowSize._t = setTimeout(reportWindowSize, 700);
         });
-        // 有些情况下（窗口被遮挡/由外部 Win32 移动）resize 事件会被合并或延迟，定时兜底
-        setInterval(reportWindowSize, 2500);
       }
     });
 
@@ -1465,6 +1473,9 @@ function updateStatus() {
     }).catch(function (e) {
       c.editorialErrAt = Date.now();
       qojLog('取题解失败：' + e.message);
+      if (/unknown action|404/i.test(e.message)) {
+        toast('本地启动器是旧版本，重启应用后才能用「查看题解」', 'err');
+      }
     }).then(function () {
       state.qoj.editorialLoading = false;
       updateEditorialBtn();
@@ -1693,6 +1704,7 @@ function updateStatus() {
       var s = await QOJ.status();
       state.qoj.loggedIn = !!s.loggedIn;
       state.qoj.user = s.user || '';
+      state.qoj.hasSession = !!s.hasSession;
       state.qoj.pageUrl = s.url || '';
       if (s.languages && s.languages.length) state.qoj.languages = s.languages;
       if (state.qoj.loggedIn && state.qoj.user) {
@@ -1701,6 +1713,7 @@ function updateStatus() {
       }
       renderQojAccount();
       renderQojState();
+      if (state.drawerKind === 'my') renderMyTeamDrawer();
     } catch (e) { /* ignore */ }
   }
 
