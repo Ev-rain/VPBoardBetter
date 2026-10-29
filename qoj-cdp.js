@@ -903,9 +903,6 @@ async function submission(id) {
     verdict: verdict || '',
     code: rowCode,
     score: (info && info.score ? info.score : ''),
-    test: failedTest ? failedTest.label : '',
-    testVerdict: failedTest ? failedTest.verdict : '',
-    tests: tests.length,
     final: !!final
   };
 }
