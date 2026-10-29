@@ -1346,7 +1346,18 @@ function updateStatus() {
     // 检查本地启动器
     Data.checkServer().then(function (info) {
       state.qoj.available = !!info.available;
-      $('#statusRight').textContent = info.available ? '本地启动器已连接 · QOJ 可用' : '';
+      if (info.available && !state.qojStaleNotified) {
+        var feats = info.features || [];
+        if (feats.indexOf('editorial') < 0) {
+          state.qojStaleNotified = true;
+          $('#statusRight').textContent = '本地服务是旧版本 · 请用管理员身份运行 stop.bat 后重开';
+          toast('本地服务还是旧版本：关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+        } else {
+          $('#statusRight').textContent = '本地启动器已连接 · QOJ 可用';
+        }
+      } else if (!info.available) {
+        $('#statusRight').textContent = '';
+      }
       if (info.available) {
         setTimeout(reportWindowSize, 1500);
         // 有些情况下（窗口被遮挡/由外部 Win32 移动）resize 事件会被合并或延迟，定时兜底
@@ -1457,16 +1468,28 @@ function updateStatus() {
 
   var editorialShown = null;
 
+  function qojServerStale() {
+    if (!QOJ.available) return false;
+    var f = (Data.serverInfo && Data.serverInfo.features) || [];
+    return f.indexOf('editorial') < 0;
+  }
+
   function ensureEditorial() {
-    if (!state.dataset) return;
+    if (!state.dataset) return Promise.resolve(null);
     var c = qojContest();
-    if (!c || !c.url) { updateEditorialBtn(); return; }
-    if (c.editorial) { updateEditorialBtn(); return; }
-    if (!QOJ.available || state.qoj.editorialLoading) return;
-    if (c.editorialErrAt && Date.now() - c.editorialErrAt < 60000) return;
+    if (!c || !c.url) return Promise.resolve(null);
+    if (c.editorial) return Promise.resolve(c.editorial);
+    if (state.qoj.editorialPromise) return state.qoj.editorialPromise;
+    if (!QOJ.available) { toast('需要本地启动器才能查找题解', 'err'); return Promise.resolve(null); }
+    if (qojServerStale()) {
+      qojLog('本地服务是旧版本（health 里没有 editorial）');
+      toast('本地服务还是旧版本：请关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+      return Promise.resolve(null);
+    }
+    if (c.editorialErrAt && Date.now() - c.editorialErrAt < 60000) return Promise.resolve(null);
     state.qoj.editorialLoading = true;
     qojLog('找题解：' + c.url);
-    QOJ.editorial(c.url).then(function (r) {
+    state.qoj.editorialPromise = QOJ.editorial(c.url).then(function (r) {
       c.editorial = r.pick ? { url: r.pick.href, text: r.pick.text } : { none: true };
       qojLog(r.pick ? '题解：' + r.pick.text : '这场比赛没有题解附件');
       saveQoj();
@@ -1474,31 +1497,59 @@ function updateStatus() {
       c.editorialErrAt = Date.now();
       qojLog('取题解失败：' + e.message);
       if (/unknown action|404/i.test(e.message)) {
-        toast('本地启动器是旧版本，重启应用后才能用「查看题解」', 'err');
+        toast('本地服务还是旧版本：请关掉应用窗口，用管理员身份运行 stop.bat，再重新打开', 'err');
+      } else {
+        toast('查找题解失败：' + e.message, 'err');
       }
     }).then(function () {
       state.qoj.editorialLoading = false;
+      state.qoj.editorialPromise = null;
       updateEditorialBtn();
+      return c.editorial || null;
     });
+    return state.qoj.editorialPromise;
   }
 
   function updateEditorialBtn() {
     var btn = $('#btnEditorial');
     if (!btn) return;
     var c = state.dataset ? qojContest() : null;
-    if (state.finished && c && c.url && !c.editorial) ensureEditorial();
-    var url = (state.finished && c && c.editorial && c.editorial.url) || '';
-    if (url === editorialShown) return;
-    editorialShown = url;
-    if (!url) { btn.hidden = true; btn.removeAttribute('title'); return; }
-    btn.hidden = false;
-    btn.title = '在默认浏览器打开：' + (c.editorial.text || '比赛题解');
+    var none = !!(c && c.editorial && c.editorial.none);
+    var linked = !!(state.finished && c && c.url && !none);
+    if (linked && !c.editorial) ensureEditorial();
+    var url = linked && c.editorial && c.editorial.url ? c.editorial.url : '';
+    var sig = linked ? (url || (state.qoj.editorialLoading ? '@loading' : '@waiting')) : '';
+    if (sig === editorialShown) return;
+    editorialShown = sig;
+    btn.hidden = !linked;
+    if (!linked) { btn.removeAttribute('title'); return; }
+    if (url) {
+      btn.textContent = '查看题解';
+      btn.title = '在默认浏览器打开：' + (c.editorial.text || '比赛题解');
+      btn.removeAttribute('disabled');
+    } else if (state.qoj.editorialLoading) {
+      btn.textContent = '正在查找题解…';
+      btn.title = '正在 QOJ 比赛页里查找题解附件';
+      btn.setAttribute('disabled', 'disabled');
+    } else {
+      btn.textContent = '查看题解';
+      btn.title = '还没找到题解；点一下重试';
+      btn.removeAttribute('disabled');
+    }
   }
 
   async function openEditorial(e) {
     if (e) e.preventDefault();
     var c = state.dataset ? qojContest() : null;
-    if (!c || !c.editorial || !c.editorial.url) { toast('这场比赛还没有找到题解', 'err'); return; }
+    if (!c || !c.url) { toast('这场比赛还没有关联 QOJ 比赛', 'err'); return; }
+    if (!c.editorial || !c.editorial.url) {
+      c.editorialErrAt = 0;
+      await ensureEditorial();
+    }
+    if (!c.editorial || !c.editorial.url) {
+      toast(c.editorial && c.editorial.none ? '这场比赛在 QOJ 上没有题解附件' : '还没有拿到题解链接', 'err');
+      return;
+    }
     if (!QOJ.available) { toast('需要本地启动器才能用默认浏览器打开', 'err'); return; }
     try {
       var res = await fetch('/api/open?url=' + encodeURIComponent(c.editorial.url));

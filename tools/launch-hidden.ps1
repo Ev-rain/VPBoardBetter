@@ -45,6 +45,28 @@ function Find-Node {
   return $null
 }
 
+function Get-Health {
+  try { return Invoke-RestMethod -Uri ("http://127.0.0.1:" + $port + "/api/health") -TimeoutSec 3 } catch { return $null }
+}
+
+if (Test-Port $port) {
+  $h = Get-Health
+  $stale = $false
+  if ($h -and $h.ok) {
+    if ($h.features) { $stale = -not ($h.features -contains 'editorial') } else { $stale = $true }
+  }
+  if ($stale) {
+    Log '发现旧版本服务，尝试结束它'
+    $oldPids = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach ($oldPid in $oldPids) { Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 900
+    if (Test-Port $port) {
+      Show-Message ("检测到旧版本的本地服务（端口 " + $port + "），需要先结束它。" + [Environment]::NewLine + [Environment]::NewLine + "请右键 stop.bat → 以管理员身份运行，然后再双击本程序。") "VP Board Better"
+      exit 1
+    }
+  }
+}
+
 if (-not (Test-Port $port)) {
   Log '服务没在跑，启动 node'
   $node = Find-Node

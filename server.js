@@ -18,6 +18,7 @@ const { execFile } = require('child_process');
 const { URL, URLSearchParams } = require('url');
 
 const ROOT = __dirname;
+const BUILD = '2026-10-29';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = '127.0.0.1';
 const QOJ_ORIGIN = 'https://qoj.ac';
@@ -589,7 +590,14 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://' + HOST + ':' + PORT);
   try {
     if (u.pathname === '/api/health') {
-      return sendJson(res, 200, { ok: true, app: 'vp-board-better', qoj: true, port: PORT });
+      return sendJson(res, 200, {
+        ok: true,
+        app: 'vp-board-better',
+        qoj: true,
+        port: PORT,
+        build: BUILD,
+        features: ['boards', 'editorial', 'open', 'window']
+      });
     }
 
     if (u.pathname === '/api/window') {

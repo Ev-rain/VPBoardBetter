@@ -11,7 +11,7 @@
   var PROXY_HOSTS = ['board.xcpcio.com', 'xcpcio.github.io'];
   var TIMEOUT = 15000;
 
-  var serverInfo = { checked: false, available: false, version: '', qoj: false };
+  var serverInfo = { checked: false, available: false, version: '', build: '', features: [], qoj: false };
 
   function fetchText(url, timeout) {
     var ctrl = new AbortController();
@@ -79,6 +79,8 @@
         serverInfo.checked = true;
         serverInfo.available = !!(j && j.ok);
         serverInfo.version = (j && j.version) || '';
+        serverInfo.build = (j && j.build) || '';
+        serverInfo.features = (j && j.features) || [];
         serverInfo.qoj = !!(j && j.qoj);
       })
       .catch(function () { serverInfo.checked = true; serverInfo.available = false; })
