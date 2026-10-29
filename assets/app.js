@@ -1797,6 +1797,10 @@ function updateStatus() {
      路径不是这种形式时退回用比赛名里的英文词，再不行才按开赛日期圈。 */
   function qojQueryForContest() {
     var raw = String(state.contestInput || '').trim();
+    if (!raw) {
+      var input = $('#dataUrl');
+      raw = input ? String(input.value || '').trim() : '';
+    }
     var seg = '';
     if (raw && !/^[a-z]:\\/i.test(raw)) {
       var path = raw;
@@ -1815,22 +1819,21 @@ function updateStatus() {
 
   async function searchQojForContest() {
     if (!state.qoj.available) { toast('需要本地启动器：用 start.bat 打开', 'err'); return; }
-    if (!state.dataset) { toast('先加载榜单，再搜这场比赛', 'err'); return; }
     var q = qojQueryForContest();
-    var date = qojDateOf(state.dataset.contest && state.dataset.contest.startMs);
-    if (!q && !date) { toast('这场榜单没有可搜索的赛站名，也没有开赛时间', 'err'); return; }
+    var startMs = state.dataset && state.dataset.contest && state.dataset.contest.startMs;
+    var date = startMs ? qojDateOf(startMs) : '';
     var box = $('#qojPicker');
     if (box) box.hidden = false;
     var s = $('#qojPickerSearch');
+    if (s) { s.value = q; s.focus(); }
     if (q) {
-      if (s) { s.value = q; s.focus(); }
       qojPicker.date = '';
       loadQojPicker(q);
       return;
     }
-    if (s) { s.value = ''; s.focus(); }
-    qojPicker.date = date;
+    qojPicker.date = date || '';
     loadQojPicker('');
+    if (!date) toast('在下面的搜索框里输入比赛名或编号，或者先选好榜单再点这里');
   }
 
   /* 从 QOJ 比赛列表里挑一场 */
