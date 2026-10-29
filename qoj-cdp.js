@@ -724,6 +724,37 @@ async function submit(opts) {
 
 /* ---------------- 评测结果 ---------------- */
 
+const SCORE_CODES = {
+  AC: 'Accepted',
+  WA: 'Wrong Answer',
+  TLE: 'Time Limit Exceeded',
+  MLE: 'Memory Limit Exceeded',
+  RE: 'Runtime Error',
+  CE: 'Compilation Error',
+  PE: 'Presentation Error',
+  OLE: 'Output Limit Exceeded',
+  ILE: 'Idleness Limit Exceeded',
+  UKE: 'Unknown Error',
+  JF: 'Judgement Failed',
+  SE: 'System Error',
+  HACKED: 'Hacked'
+};
+
+// QOJ 的提交结果只在这一行的分数单元格里（a.uoj-score，内容是 AC / WA / TLE 这样的短码，
+// 通过时还带一个 ✓，分数放在 data-score）。不能整页找关键字：页面上还有状态筛选下拉框，
+// 里面列着 Accepted、Wrong Answer 等全部选项，按整页文本匹配会把任何提交都判成 Accepted。
+function verdictFromCode(code, score) {
+  const raw = String(code || '').trim();
+  const c = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const sc = String(score == null ? '' : score).trim();
+  if (c && SCORE_CODES[c]) return SCORE_CODES[c];
+  if (sc !== '' && !isNaN(Number(sc))) return Number(sc) >= 100 ? 'Accepted' : 'Wrong Answer';
+  if (!c) return '';
+  if (/^\d+$/.test(c)) return Number(c) >= 100 ? 'Accepted' : 'Wrong Answer';
+  if (/JUDG|COMPIL|RUNNING|WAITING/.test(c)) return 'Judging';
+  return raw;
+}
+
 function verdictOf(t) {
   const table = [
     ['Accepted', 'Accepted'],
@@ -748,21 +779,62 @@ function verdictOf(t) {
   return '';
 }
 
+const READ_SCORE_JS = [
+  '(function () {',
+  '  var sid = window.__vpbSid;',
+  '  var rows = Array.prototype.slice.call(document.querySelectorAll("tr"));',
+  '  var row = null;',
+  '  for (var i = 0; i < rows.length; i++) {',
+  '    var links = rows[i].querySelectorAll("a[href*=\'/submission/\']");',
+  '    for (var j = 0; j < links.length; j++) {',
+  '      var href = links[j].getAttribute("href") || "";',
+  '      if (href.indexOf("/submission/" + sid) >= 0 && (links[j].textContent || "").indexOf("#" + sid) >= 0) { row = rows[i]; break; }',
+  '    }',
+  '    if (row) break;',
+  '  }',
+  '  function readCell(r) {',
+  '    var score = r.querySelector("a.uoj-score");',
+  '    if (score) return { code: (score.textContent || "").trim(), score: score.getAttribute("data-score") || "" };',
+  '    var tds = r.querySelectorAll("td");',
+  '    if (tds.length > 3) return { code: (tds[3].textContent || "").trim(), score: "" };',
+  '    return { code: "", score: "" };',
+  '  }',
+  '  if (row) return JSON.stringify(readCell(row));',
+  '  var any = document.querySelector("a.uoj-score");',
+  '  if (any) return JSON.stringify({ code: (any.textContent || "").trim(), score: any.getAttribute("data-score") || "" });',
+  '  return "";',
+  '})()'
+].join('\n');
+
 async function submission(id) {
   if (!browser) await connect();
   const sid = String(id || '').replace(/[^\d]/g, '');
   if (!sid) throw new Error('缺少 submission id');
   await goto(ORIGIN + '/submission/' + sid);
-  const t = await text();
-  const verdict = verdictOf(t);
-  const final = verdict && !/Waiting|Compiling|Running|Judging/.test(verdict);
-  dbg('查询 #' + sid + ' → ' + (verdict || '未知'));
+  try {
+    await waitFor("!!document.querySelector('a.uoj-score')", 15000, '提交结果页');
+  } catch (e) { dbg('等待结果页超时: ' + e.message); }
+
+  await evaluate('window.__vpbSid = ' + JSON.stringify(sid));
+  const raw = await evaluate(READ_SCORE_JS);
+  let info = null;
+  try { info = JSON.parse(raw || 'null'); } catch (e) { info = null; }
+
+  let verdict = '';
+  if (info && info.code) verdict = verdictFromCode(info.code, info.score);
+  if (!verdict) {
+    const t = await text();
+    verdict = verdictOf(t);
+  }
+  const final = !!verdict && !/Waiting|Compiling|Running|Judging/.test(verdict);
+  dbg('查询 #' + sid + ' → ' + (verdict || '未知') + (info && info.code ? '（' + info.code.trim() + '）' : ''));
   return {
     id: sid,
     status: verdict || 'Unknown',
     verdict: verdict || '',
-    final: !!final,
-    text: t.slice(0, 400)
+    code: (info && info.code ? info.code.trim() : ''),
+    score: (info && info.score ? info.score : ''),
+    final: !!final
   };
 }
 
