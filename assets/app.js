@@ -1578,7 +1578,13 @@ function updateStatus() {
         '<label class="field"><span>密码</span><input id="qojPass" type="password" autocomplete="current-password" value="' + esc(cred.pass) + '"></label>' +
         '</div><div class="mt-actions">' +
         '<label class="mt-remember"><input id="qojRemember" type="checkbox"' + (cred.remember ? ' checked' : '') + '> 记住密码（本机保存）</label>' +
+        '<button class="btn tiny ghost" id="qojForget">忘记账号</button>' +
         '<button class="btn primary" id="qojLogin">登录 QOJ</button></div>';
+      $('#qojForget').addEventListener('click', function () {
+        try { localStorage.removeItem(QOJ_LOGIN_KEY); } catch (e) { }
+        renderQojAccount();
+        toast('已清除记住的 QOJ 账号', 'ok');
+      });
       $('#qojLogin').addEventListener('click', async function () {
         var u = $('#qojUser').value.trim(), p = $('#qojPass').value;
         var remember = !!(($('#qojRemember') || {}).checked);
