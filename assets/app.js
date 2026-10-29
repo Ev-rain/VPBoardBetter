@@ -133,6 +133,7 @@
     state.frozen = false;
     state.elapsed = state.view ? state.view.virtualDuration : 0;
     updatePlayButton();
+    ensureEditorial();
   }
 
   function restart() {
@@ -199,6 +200,7 @@
     } else {
       els.freezeBadge.hidden = true;
     }
+    updateEditorialBtn();
   }
 
   function seekTo(ms) {
@@ -1177,11 +1179,7 @@ function updateStatus() {
 
   function bindEvents() {
     els.btnPlay.addEventListener('click', function () { setPlaying(!state.playing); });
-    $('#btnRestart').addEventListener('click', restart);
-    $('#speed').addEventListener('change', function (e) {
-      state.speed = Number(e.target.value) || 1;
-      savePrefs();
-    });
+    $('#btnEditorial').addEventListener('click', openEditorial);
     $$('#modeSeg button').forEach(function (b) {
       b.addEventListener('click', function () { setMode(b.dataset.mode); });
     });
@@ -1286,7 +1284,6 @@ function updateStatus() {
       if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); seekTo(state.elapsed - (e.shiftKey ? 300000 : 60000)); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); seekTo(state.elapsed + (e.shiftKey ? 300000 : 60000)); }
-      else if (e.key === 'r' || e.key === 'R') { restart(); }
       else if (e.key === '/') { e.preventDefault(); els.search.focus(); }
     });
 
@@ -1315,13 +1312,11 @@ function updateStatus() {
     if (qs) {
       if (qs.get('mode') === '3h' || qs.get('mode') === 'full') state.mode = qs.get('mode');
       if (qs.has('official')) state.officialOnly = qs.get('official') !== '0';
-      if (qs.get('speed')) state.speed = Math.min(8, Math.max(0.5, Number(qs.get('speed')) || 1));
     }
 
     state.myTeamId = null;
     $('#officialOnly').checked = state.officialOnly;
     $('#showMedals').checked = state.showMedals;
-    $('#speed').value = String(state.speed);
     $$('#modeSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.mode === state.mode); });
 
     bindModalDismiss();
@@ -1448,6 +1443,61 @@ function updateStatus() {
     try {
       localStorage.setItem(QOJ_STORE, JSON.stringify({ byContest: state.qoj.byContest || {} }));
     } catch (e) { /* ignore */ }
+  }
+
+  /* ---------------- 题解 ---------------- */
+
+  var editorialShown = null;
+
+  function ensureEditorial() {
+    if (!state.dataset) return;
+    var c = qojContest();
+    if (!c || !c.url) { updateEditorialBtn(); return; }
+    if (c.editorial) { updateEditorialBtn(); return; }
+    if (!QOJ.available || state.qoj.editorialLoading) return;
+    if (c.editorialErrAt && Date.now() - c.editorialErrAt < 60000) return;
+    state.qoj.editorialLoading = true;
+    qojLog('找题解：' + c.url);
+    QOJ.editorial(c.url).then(function (r) {
+      c.editorial = r.pick ? { url: r.pick.href, text: r.pick.text } : { none: true };
+      qojLog(r.pick ? '题解：' + r.pick.text : '这场比赛没有题解附件');
+      saveQoj();
+    }).catch(function (e) {
+      c.editorialErrAt = Date.now();
+      qojLog('取题解失败：' + e.message);
+    }).then(function () {
+      state.qoj.editorialLoading = false;
+      updateEditorialBtn();
+    });
+  }
+
+  function updateEditorialBtn() {
+    var btn = $('#btnEditorial');
+    if (!btn) return;
+    var c = state.dataset ? qojContest() : null;
+    if (state.finished && c && c.url && !c.editorial) ensureEditorial();
+    var url = (state.finished && c && c.editorial && c.editorial.url) || '';
+    if (url === editorialShown) return;
+    editorialShown = url;
+    if (!url) { btn.hidden = true; btn.removeAttribute('title'); return; }
+    btn.hidden = false;
+    btn.title = '在默认浏览器打开：' + (c.editorial.text || '比赛题解');
+  }
+
+  async function openEditorial(e) {
+    if (e) e.preventDefault();
+    var c = state.dataset ? qojContest() : null;
+    if (!c || !c.editorial || !c.editorial.url) { toast('这场比赛还没有找到题解', 'err'); return; }
+    if (!QOJ.available) { toast('需要本地启动器才能用默认浏览器打开', 'err'); return; }
+    try {
+      var res = await fetch('/api/open?url=' + encodeURIComponent(c.editorial.url));
+      var j = null;
+      try { j = await res.json(); } catch (err) { j = null; }
+      if (!res.ok || (j && j.ok === false)) throw new Error((j && j.error) || ('HTTP ' + res.status));
+      toast('已在默认浏览器打开题解', 'ok');
+    } catch (err) {
+      toast('打开失败：' + err.message, 'err');
+    }
   }
 
   function loadQoj() {
@@ -1578,12 +1628,11 @@ function updateStatus() {
         '<label class="field"><span>密码</span><input id="qojPass" type="password" autocomplete="current-password" value="' + esc(cred.pass) + '"></label>' +
         '</div><div class="mt-actions">' +
         '<label class="mt-remember"><input id="qojRemember" type="checkbox"' + (cred.remember ? ' checked' : '') + '> 记住密码（本机保存）</label>' +
-        '<button class="btn tiny ghost" id="qojForget">忘记账号</button>' +
         '<button class="btn primary" id="qojLogin">登录 QOJ</button></div>';
-      $('#qojForget').addEventListener('click', function () {
-        try { localStorage.removeItem(QOJ_LOGIN_KEY); } catch (e) { }
-        renderQojAccount();
-        toast('已清除记住的 QOJ 账号', 'ok');
+      $('#qojRemember').addEventListener('change', function () {
+        var u = $('#qojUser') ? $('#qojUser').value : '';
+        var p = $('#qojPass') ? $('#qojPass').value : '';
+        saveQojLogin(u, p, this.checked);
       });
       $('#qojLogin').addEventListener('click', async function () {
         var u = $('#qojUser').value.trim(), p = $('#qojPass').value;

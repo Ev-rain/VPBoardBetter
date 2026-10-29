@@ -50,6 +50,7 @@
       return get(url, 90000);
     },
     submit: function (payload) { return post('/submit', payload, 120000); },
-    submission: function (id) { return get('/submission?id=' + encodeURIComponent(id)); }
+    submission: function (id) { return get('/submission?id=' + encodeURIComponent(id)); },
+    editorial: function (contestUrl) { return get('/editorial?contest=' + encodeURIComponent(contestUrl || ''), 90000); }
   };
 })(window);

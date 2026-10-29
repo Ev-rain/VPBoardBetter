@@ -63,18 +63,7 @@
         <button data-mode="full">完整时长</button>
         <button data-mode="3h" class="on">3 小时</button>
       </div>
-      <label class="speed">
-        <select id="speed">
-          <option value="0.5">0.5×</option>
-          <option value="1" selected>1×</option>
-          <option value="2">2×</option>
-          <option value="4">4×</option>
-          <option value="8">8×</option>
-        </select>
-      </label>
-      <button class="btn ghost icon-only" id="btnRestart" title="从头开始">
-        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z"/></svg>
-      </button>
+      <button class="btn ghost" id="btnEditorial" hidden>查看题解</button>
       <span class="badge badge-freeze" id="freezeBadge" hidden>封榜中</span>
     </div>
   </section>
@@ -303,9 +292,9 @@
       <ul class="keys">
         <li><kbd>空格</kbd> 播放 / 暂停</li>
         <li><kbd>←</kbd> <kbd>→</kbd> 后退 / 前进 1 分钟（Shift 为 5 分钟）</li>
-        <li><kbd>R</kbd> 从头开始</li>
         <li><kbd>/</kbd> 聚焦搜索框</li>
       </ul>
+      <p class="muted">比赛播放到结束后，控制条右侧会出现「查看题解」，点它用系统默认浏览器打开这场比赛 QOJ 上的中文题解（没有中文版就开英文版）。</p>
     </div>
     <div class="modal-foot"><button class="btn primary" data-close>知道了</button></div>
   </div>

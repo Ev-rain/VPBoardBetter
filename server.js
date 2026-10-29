@@ -14,6 +14,7 @@ const https = require('https');
 const fs = require('fs');
 const cdp = require('./qoj-cdp.js');
 const path = require('path');
+const { execFile } = require('child_process');
 const { URL, URLSearchParams } = require('url');
 
 const ROOT = __dirname;
@@ -490,6 +491,18 @@ async function qojStatus() {
 
 /* ---------------- HTTP 服务器 ---------------- */
 
+const OPEN_HOSTS = ['qoj.ac'];
+
+function openInBrowser(url) {
+  if (process.platform === 'win32') {
+    execFile('rundll32', ['url.dll,FileProtocolHandler', url], { windowsHide: true }, function () { });
+  } else if (process.platform === 'darwin') {
+    execFile('open', [url], function () { });
+  } else {
+    execFile('xdg-open', [url], function () { });
+  }
+}
+
 function sendJson(res, code, obj, cache) {
   const body = JSON.stringify(obj);
   const headers = {
@@ -610,6 +623,20 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { ok: true, w: w, h: h });
     }
 
+    if (u.pathname === '/api/open') {
+      const target = (u.searchParams.get('url') || '').trim();
+      let t = null;
+      try { t = new URL(target); } catch (e) { }
+      if (!t || (t.protocol !== 'http:' && t.protocol !== 'https:')) {
+        return sendJson(res, 400, { ok: false, error: '链接不合法' });
+      }
+      const host = t.hostname.toLowerCase();
+      const allowed = OPEN_HOSTS.some(function (h) { return host === h || host.slice(-h.length - 1) === '.' + h; });
+      if (!allowed) return sendJson(res, 403, { ok: false, error: '只允许打开 QOJ 的链接' });
+      openInBrowser(t.href);
+      return sendJson(res, 200, { ok: true, url: t.href });
+    }
+
     if (u.pathname === '/api/boards') {
       try {
         const idx = await boardIndex(u.searchParams.get('refresh') === '1');
@@ -700,6 +727,14 @@ const server = http.createServer(async (req, res) => {
             }
           }
           return sendJson(res, 200, { ok: true, total: all.length, matched: hit.length, date: date, days: days, items: hit.slice(0, limit), log: cdp.log() }, 'public, max-age=600');
+        } catch (e) {
+          return sendJson(res, 502, { ok: false, error: e.message, log: cdp.log() });
+        }
+      }
+      if (action === 'editorial') {
+        try {
+          const r = await cdp.editorials(String(u.searchParams.get('contest') || ''));
+          return sendJson(res, 200, { ok: true, contest: r.contest, items: r.items, pick: r.pick, log: cdp.log() });
         } catch (e) {
           return sendJson(res, 502, { ok: false, error: e.message, log: cdp.log() });
         }

@@ -551,6 +551,50 @@ async function problems(contestUrl) {
   return list.map((x, i) => ({ id: x.id, href: x.href, label: x.label, letter: letters[i] || String(i + 1) }));
 }
 
+/* ---------------- 题解附件 ---------------- */
+
+async function editorials(contestUrl) {
+  const raw = String(contestUrl || '').trim();
+  if (!raw) throw new Error('还没有关联 QOJ 比赛');
+  const url = /^\d+$/.test(raw) ? ORIGIN + '/contest/' + raw : new URL(raw, ORIGIN + '/').toString();
+  if (!browser) await connect();
+  await goto(url);
+  await sleep(500);
+  const t = await text();
+  if (/Please login|请先登录/i.test(t)) throw new Error('还没有登录 QOJ');
+  const out = await evaluate(`(() => {
+    const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
+    const items = [];
+    document.querySelectorAll('a[href]').forEach(a => {
+      const t = norm(a.textContent);
+      const h = a.getAttribute('href') || '';
+      if (!t || t.length > 80) return;
+      if (!/tutorial|题解|editorial|solution/i.test(t + ' ' + h)) return;
+      items.push({ text: t, href: a.href });
+    });
+    return JSON.stringify(items);
+  })()`);
+  let items = [];
+  try { items = JSON.parse(out || '[]'); } catch (e) { items = []; }
+  const seen = new Set();
+  items = items.filter(function (x) {
+    if (!x.href || seen.has(x.href)) return false;
+    seen.add(x.href);
+    return true;
+  });
+  items = items.map(function (x) {
+    const m = /\(([a-zA-Z-]{2,10})\)\s*$/.exec(x.text);
+    return { text: x.text, href: x.href, lang: m ? m[1].toLowerCase() : '' };
+  });
+  const pick = items.find(function (x) { return x.lang === 'zh-cn'; })
+    || items.find(function (x) { return /^zh/i.test(x.lang); })
+    || items.find(function (x) { return x.lang === 'en'; })
+    || items.find(function (x) { return /tutorial/i.test(x.text); })
+    || items[0] || null;
+  dbg('题解页 ' + url + ' → ' + items.length + ' 个候选，选中: ' + (pick ? pick.text : '无'));
+  return { contest: url, items: items, pick: pick };
+}
+
 /* ---------------- 比赛列表 ---------------- */
 
 let contestsCache = { ts: 0, list: [] };
@@ -962,4 +1006,4 @@ function cleanupStaleProfiles() {
   } catch (e) { }
 }
 
-module.exports = { login, logout, problems, contests, submit, submission, status, close, log, normalizeLang, verdictOf, connect, evaluate, goto, waitFor };
+module.exports = { login, logout, problems, editorials, contests, submit, submission, status, close, log, normalizeLang, verdictOf, connect, evaluate, goto, waitFor };
