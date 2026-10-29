@@ -806,34 +806,106 @@ const READ_SCORE_JS = [
   '})()'
 ].join('\n');
 
+// 逐个测试点的结果：QOJ 在 #details_details_accordion 里为每个测试点渲染一张 card，
+// 头部依次是 Test #N / score: X / 判定（Accepted、Wrong Answer…）。
+// ICPC 赛制只要有一个测试点不是 Accepted 就算这题没过，所以要找出第一个失败的测试点。
+const READ_TESTS_JS = [
+  '(function () {',
+  '  var wrap = document.querySelector("#details_details_accordion");',
+  '  if (!wrap) return "[]";',
+  '  var cards = Array.prototype.slice.call(wrap.querySelectorAll(".card"));',
+  '  var out = cards.map(function (c) {',
+  '    var head = c.querySelector(".card-header .row") || c.querySelector(".card-header");',
+  '    var cols = head ? Array.prototype.slice.call(head.querySelectorAll("div")).map(function (d) { return (d.textContent || "").replace(/\\s+/g, " ").trim(); }) : [];',
+  '    return { label: cols[0] || "", score: cols[1] || "", verdict: cols[2] || "", cls: c.className };',
+  '  });',
+  '  return JSON.stringify(out);',
+  '})()'
+].join('\n');
+
+function firstFailedTest(tests) {
+  for (const t of tests) {
+    const v = String(t.verdict || '').trim();
+    if (!v) continue;
+    if (/^Accepted$/i.test(v)) continue;
+    if (/^Skipped/i.test(v)) continue;
+    return t;
+  }
+  return null;
+}
+
+const PAGE_STATE_JS =
+  "JSON.stringify({t:document.title||'',s:!!document.querySelector('a.uoj-score'),c:(document.querySelectorAll('#details_details_accordion .card')||[]).length})";
+
+// 等结果页真正渲染出来。QOJ 在 Cloudflare 后面，偶尔会先给一个「请稍候…」的验证页，
+// 这时既没有分数单元格也没有测试点列表，直接读会得到空结果（表现就是「Unknown」）。
+async function waitResultPage(timeoutMs) {
+  const until = Date.now() + (timeoutMs || 25000);
+  let last = null;
+  while (Date.now() < until) {
+    try {
+      const raw = await evaluate(PAGE_STATE_JS);
+      last = JSON.parse(raw || '{}');
+      if (last && (last.s || last.c)) return last;
+    } catch (e) { }
+    await sleep(500);
+  }
+  return last;
+}
+
 async function submission(id) {
   if (!browser) await connect();
   const sid = String(id || '').replace(/[^\d]/g, '');
   if (!sid) throw new Error('缺少 submission id');
-  await goto(ORIGIN + '/submission/' + sid);
-  try {
-    await waitFor("!!document.querySelector('a.uoj-score')", 15000, '提交结果页');
-  } catch (e) { dbg('等待结果页超时: ' + e.message); }
+
+  let page = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await goto(ORIGIN + '/submission/' + sid);
+    page = await waitResultPage(25000);
+    if (page && (page.s || page.c)) break;
+    dbg('结果页未就绪（' + ((page && page.t) || '未知页面') + '），重试' + (attempt === 0 ? '' : '仍失败'));
+    if (attempt === 0) await sleep(1500);
+  }
 
   await evaluate('window.__vpbSid = ' + JSON.stringify(sid));
   const raw = await evaluate(READ_SCORE_JS);
   let info = null;
   try { info = JSON.parse(raw || 'null'); } catch (e) { info = null; }
 
+  let tests = [];
+  try {
+    const rawTests = await evaluate(READ_TESTS_JS);
+    tests = JSON.parse(rawTests || '[]');
+  } catch (e) { tests = []; }
+
+  const pending = /Waiting|Compiling|Running|Judging/i;
+  const rowCode = info && info.code ? String(info.code).trim() : '';
+  const rowVerdict = rowCode ? verdictFromCode(rowCode, info ? info.score : '') : '';
+
+  // ICPC 赛制：任何一个测试点不是 Accepted，这次提交就算没过，原因取第一个失败的测试点。
   let verdict = '';
-  if (info && info.code) verdict = verdictFromCode(info.code, info.score);
-  if (!verdict) {
-    const t = await text();
-    verdict = verdictOf(t);
+  let failedTest = null;
+  if (tests.length) {
+    failedTest = firstFailedTest(tests);
+    verdict = failedTest ? (verdictFromCode(failedTest.verdict) || 'Wrong Answer') : 'Accepted';
+  } else {
+    verdict = rowVerdict;
   }
-  const final = !!verdict && !/Waiting|Compiling|Running|Judging/.test(verdict);
-  dbg('查询 #' + sid + ' → ' + (verdict || '未知') + (info && info.code ? '（' + info.code.trim() + '）' : ''));
+  if (pending.test(rowVerdict)) verdict = rowVerdict;
+
+  const final = !!verdict && !pending.test(verdict);
+  dbg('查询 #' + sid + ' → ' + (verdict || '未知') +
+    (failedTest ? '（' + failedTest.label + ' ' + failedTest.verdict + '）' : '') +
+    (rowCode ? '，行内 ' + rowCode : '') + '，测试点 ' + tests.length);
   return {
     id: sid,
     status: verdict || 'Unknown',
     verdict: verdict || '',
-    code: (info && info.code ? info.code.trim() : ''),
+    code: rowCode,
     score: (info && info.score ? info.score : ''),
+    test: failedTest ? failedTest.label : '',
+    testVerdict: failedTest ? failedTest.verdict : '',
+    tests: tests.length,
     final: !!final
   };
 }

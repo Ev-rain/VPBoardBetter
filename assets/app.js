@@ -1929,18 +1929,22 @@ function updateStatus() {
         qojLog('轮询 #' + id + '：' + (s.verdict || s.status || '?'));
         if (s.final || s.finished) {
           var verdict = s.verdict || s.status || 'Unknown';
+          var why = '';
+          if (s.test) {
+            why = '（挂在第 ' + String(s.test).replace(/[^\d]/g, '') + ' 个测试点' + (s.testVerdict && s.testVerdict !== verdict ? '：' + s.testVerdict : '') + '）';
+          }
           var norm = VP.normalizeStatus(verdict);
           var st = norm.st === 'AC' ? 'AC' : norm.st === 'CE' ? 'CE' : 'WA';
           var ok = st === 'AC';
           state.myRuns.push({
             teamId: state.myTeamId, p: pIdx, t: submitElapsed, realTs: submitElapsed,
-            st: st, raw: verdict, manual: true, note: 'QOJ #' + id
+            st: st, raw: verdict + why, manual: true, note: 'QOJ #' + id
           });
           rebuildView(); saveMy(); renderBoard(true);
           if (state.drawerKind === 'my') renderMyTeamDrawer();
           var when = fmtMinSec(submitElapsed);
-          toast('QOJ #' + id + ' ' + verdict + (st === 'CE' ? '（不计罚时）' : '') + '，已按 ' + when + ' 记入 ' + label + ' 题', ok ? 'ok' : 'err');
-          $('#qojState').textContent = '评测完成：' + verdict + '（已记入 ' + when + '）';
+          toast('QOJ #' + id + ' ' + verdict + why + (st === 'CE' ? '（不计罚时）' : '') + '，已按 ' + when + ' 记入 ' + label + ' 题', ok ? 'ok' : 'err');
+          $('#qojState').textContent = '评测完成：' + verdict + why + '（已记入 ' + when + '）';
           $('#qojState').className = 'qoj-state ' + (ok ? 'ok' : 'err');
           return;
         }
