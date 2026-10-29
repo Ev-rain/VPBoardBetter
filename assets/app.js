@@ -1534,6 +1534,26 @@ function updateStatus() {
     lang.innerHTML = list.map(function (l) { return '<option>' + esc(l) + '</option>'; }).join('');
   }
 
+  /* QOJ 账号记忆：用户名总记住；密码只在勾选「记住密码」时存（本机 localStorage，明文） */
+  var QOJ_LOGIN_KEY = 'xcpciovp.qojlogin.v1';
+
+  function loadQojLogin() {
+    try {
+      var j = JSON.parse(localStorage.getItem(QOJ_LOGIN_KEY) || '{}') || {};
+      return { user: String(j.user || ''), pass: String(j.pass || ''), remember: !!j.remember };
+    } catch (e) {
+      return { user: '', pass: '', remember: false };
+    }
+  }
+
+  function saveQojLogin(user, pass, remember) {
+    try {
+      var o = { user: String(user || ''), remember: !!remember };
+      if (remember && pass) o.pass = String(pass);
+      localStorage.setItem(QOJ_LOGIN_KEY, JSON.stringify(o));
+    } catch (e) { }
+  }
+
   function renderQojAccount() {
     var box = $('#qojAccount');
     if (!box) return;
@@ -1552,18 +1572,24 @@ function updateStatus() {
         renderQojAccount(); renderQojState();
       });
     } else {
+      var cred = loadQojLogin();
       box.innerHTML = '<div class="mt-form">' +
-        '<label class="field"><span>QOJ 用户名</span><input id="qojUser" type="text" autocomplete="username"></label>' +
-        '<label class="field"><span>密码</span><input id="qojPass" type="password" autocomplete="current-password"></label>' +
-        '</div><div class="mt-actions"><button class="btn primary" id="qojLogin">登录 QOJ</button></div>';
+        '<label class="field"><span>QOJ 用户名</span><input id="qojUser" type="text" autocomplete="username" value="' + esc(cred.user) + '"></label>' +
+        '<label class="field"><span>密码</span><input id="qojPass" type="password" autocomplete="current-password" value="' + esc(cred.pass) + '"></label>' +
+        '</div><div class="mt-actions">' +
+        '<label class="mt-remember"><input id="qojRemember" type="checkbox"' + (cred.remember ? ' checked' : '') + '> 记住密码（本机保存）</label>' +
+        '<button class="btn primary" id="qojLogin">登录 QOJ</button></div>';
       $('#qojLogin').addEventListener('click', async function () {
         var u = $('#qojUser').value.trim(), p = $('#qojPass').value;
+        var remember = !!(($('#qojRemember') || {}).checked);
         if (!u || !p) { toast('填用户名和密码', 'err'); return; }
+        saveQojLogin(u, remember ? p : '', remember);
         try {
           qojLog('登录 ' + u + ' …');
           var r = await QOJ.login(u, p);
           state.qoj.loggedIn = true;
           state.qoj.user = r.user || u;
+          saveQojLogin(state.qoj.user, remember ? p : '', remember);
           qojLog('登录成功');
           renderQojAccount(); renderQojState();
           maybeAdoptFromWindow();
@@ -1614,6 +1640,10 @@ function updateStatus() {
       state.qoj.user = s.user || '';
       state.qoj.pageUrl = s.url || '';
       if (s.languages && s.languages.length) state.qoj.languages = s.languages;
+      if (state.qoj.loggedIn && state.qoj.user) {
+        var cur = loadQojLogin();
+        if (cur.user !== state.qoj.user) saveQojLogin(state.qoj.user, cur.pass, cur.remember);
+      }
       renderQojAccount();
       renderQojState();
     } catch (e) { /* ignore */ }
