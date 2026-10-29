@@ -681,10 +681,25 @@ const server = http.createServer(async (req, res) => {
           const all = await cdp.contests();
           const q = String(u.searchParams.get('q') || '').trim().toLowerCase();
           const limit = Math.min(200, Math.max(1, Number(u.searchParams.get('limit') || 40) || 40));
-          const hit = q
+          const date = String(u.searchParams.get('date') || '').trim().slice(0, 10);
+          const days = Math.min(14, Math.max(0, Number(u.searchParams.get('days') || 2) || 2));
+          let hit = q
             ? all.filter((c) => (c.title + ' ' + c.id).toLowerCase().indexOf(q) >= 0)
             : all;
-          return sendJson(res, 200, { ok: true, total: all.length, matched: hit.length, items: hit.slice(0, limit), log: cdp.log() }, 'public, max-age=600');
+          // 按比赛日期找：榜单和 QOJ 的标题语言经常对不上（中文站名 vs 英文题名），
+          // 但开赛日期是一致的，用日期圈定候选再由人挑最稳。
+          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            const base = new Date(date + 'T00:00:00').getTime();
+            if (!isNaN(base)) {
+              hit = hit.filter((c) => {
+                const s = String(c.start || '').slice(0, 10);
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+                const t = new Date(s + 'T00:00:00').getTime();
+                return !isNaN(t) && Math.abs(t - base) <= days * 86400000;
+              });
+            }
+          }
+          return sendJson(res, 200, { ok: true, total: all.length, matched: hit.length, date: date, days: days, items: hit.slice(0, limit), log: cdp.log() }, 'public, max-age=600');
         } catch (e) {
           return sendJson(res, 502, { ok: false, error: e.message, log: cdp.log() });
         }

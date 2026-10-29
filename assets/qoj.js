@@ -44,8 +44,10 @@
     login: function (username, password) { return post('/login', { username: username, password: password }, 160000); },
     logout: function () { return post('/logout', {}, 30000); },
     problems: function (contestUrl) { return post('/problems', { contest: contestUrl }, 60000); },
-    contests: function (q, limit) {
-      return get('/contests?q=' + encodeURIComponent(q || '') + '&limit=' + (limit || 40), 90000);
+    contests: function (q, limit, date, days) {
+      var url = '/contests?q=' + encodeURIComponent(q || '') + '&limit=' + (limit || 40);
+      if (date) url += '&date=' + encodeURIComponent(date) + '&days=' + (days == null ? 2 : days);
+      return get(url, 90000);
     },
     submit: function (payload) { return post('/submit', payload, 120000); },
     submission: function (id) { return get('/submission?id=' + encodeURIComponent(id)); }

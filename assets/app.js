@@ -1236,7 +1236,7 @@ function updateStatus() {
 
     // 数据源弹窗
     $('#btnLoadOnline').addEventListener('click', doLoadOnline);
-    $('#btnDataQojDetect') && $('#btnDataQojDetect').addEventListener('click', detectQojContest);
+    $('#btnDataQojDetect') && $('#btnDataQojDetect').addEventListener('click', searchQojForContest);
     bindQojPicker();
     bindBoardPicker();
     els.dataUrl.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLoadOnline(); });
@@ -1633,27 +1633,59 @@ function updateStatus() {
     await adoptQojContest(url);
   }
 
-  async function detectQojContest() {
-    if (!state.qoj.available) { toast('需要本地启动器：用 start.bat 打开', 'err'); return; }
-    try {
-      var s = await QOJ.status();
-      state.qoj.pageUrl = s.url || '';
-      var url = contestUrlFromPage(s.url);
-      if (!url) { toast('QOJ 窗口当前不在比赛页面：先在弹出窗口里打开这场比赛', 'err'); return; }
-      if (!state.dataset) {
-        var dq = $('#dataQoj');
-        if (dq) dq.value = url;
-        toast('已填入 QOJ 比赛链接：加载榜单后会自动关联', 'ok');
-        return;
+  function qojDateOf(ms) {
+    var n = Number(ms) || 0;
+    if (!(n > 0)) return '';
+    var d = new Date(n);
+    if (isNaN(d.getTime())) return '';
+    var m = d.getMonth() + 1, day = d.getDate();
+    return d.getFullYear() + '-' + (m < 10 ? '0' + m : m) + '-' + (day < 10 ? '0' + day : day);
+  }
+
+  /* 用榜单的「赛站标识」去 QOJ 搜索这场比赛：
+     榜单路径最后一段通常是拼音或英文（icpc/50th/nanjing → nanjing），
+     而 QOJ 的比赛名是英文（Grand Prix of Nanjing），拿这个词去搜命中率最高；
+     路径不是这种形式时退回用比赛名里的英文词，再不行才按开赛日期圈。 */
+  function qojQueryForContest() {
+    var raw = String(state.contestInput || '').trim();
+    var seg = '';
+    if (raw && !/^[a-z]:\\/i.test(raw)) {
+      var path = raw;
+      if (/^https?:\/\//.test(raw)) {
+        try { path = new URL(raw).pathname; } catch (e) { path = ''; }
       }
-      await adoptQojContest(url);
-    } catch (e) {
-      toast('读取 QOJ 窗口失败：' + e.message, 'err');
+      var parts = path.replace(/[?#].*$/, '').split('/').filter(Boolean);
+      var last = parts.length ? parts[parts.length - 1] : '';
+      if (/^[A-Za-z0-9][A-Za-z0-9._-]{2,}$/.test(last) && !/\.json$/i.test(last)) seg = last.replace(/\.[a-z]+$/i, '');
     }
+    if (seg) return seg;
+    var name = (state.dataset && state.dataset.contest && state.dataset.contest.name) || '';
+    var latin = (name.match(/[A-Za-z][A-Za-z0-9-]{2,}/g) || []).join(' ');
+    return latin;
+  }
+
+  async function searchQojForContest() {
+    if (!state.qoj.available) { toast('需要本地启动器：用 start.bat 打开', 'err'); return; }
+    if (!state.dataset) { toast('先加载榜单，再搜这场比赛', 'err'); return; }
+    var q = qojQueryForContest();
+    var date = qojDateOf(state.dataset.contest && state.dataset.contest.startMs);
+    if (!q && !date) { toast('这场榜单没有可搜索的赛站名，也没有开赛时间', 'err'); return; }
+    var box = $('#qojPicker');
+    if (box) box.hidden = false;
+    var s = $('#qojPickerSearch');
+    if (q) {
+      if (s) { s.value = q; s.focus(); }
+      qojPicker.date = '';
+      loadQojPicker(q);
+      return;
+    }
+    if (s) { s.value = ''; s.focus(); }
+    qojPicker.date = date;
+    loadQojPicker('');
   }
 
   /* 从 QOJ 比赛列表里挑一场 */
-  var qojPicker = { loading: false, timer: 0, lastQuery: '', items: [] };
+  var qojPicker = { loading: false, timer: 0, lastQuery: '', items: [], date: '' };
 
   function bindQojPicker() {
     var btn = $('#btnDataQojPick');
@@ -1665,6 +1697,7 @@ function updateStatus() {
       if (!box.hidden) {
         var s = $('#qojPickerSearch');
         if (s) { s.focus(); s.select(); }
+        qojPicker.date = '';
         loadQojPicker('');
       }
     });
@@ -1675,6 +1708,7 @@ function updateStatus() {
       search.addEventListener('input', function () {
         clearTimeout(qojPicker.timer);
         var q = search.value.trim();
+        qojPicker.date = '';
         qojPicker.timer = setTimeout(function () { loadQojPicker(q); }, 260);
       });
       search.addEventListener('keydown', function (e) {
@@ -1699,14 +1733,25 @@ function updateStatus() {
       qojPickerTip('需要本地启动器（start.bat）才能读取 QOJ 比赛列表', true);
       return;
     }
-    if (qojPicker.loading && q === qojPicker.lastQuery) return;
+    var date = q ? '' : (qojPicker.date || '');
+    var key = (q || '') + '|' + date;
+    if (qojPicker.loading && key === qojPicker.lastQuery) return;
     qojPicker.loading = true;
-    qojPicker.lastQuery = q;
-    qojPickerTip(q ? '搜索中 …' : '读取 QOJ 比赛列表 …');
+    qojPicker.lastQuery = key;
+    qojPickerTip(date ? '按开赛日期 ' + date + ' 查找 …' : (q ? '搜索中 …' : '读取 QOJ 比赛列表 …'));
     try {
-      var r = await QOJ.contests(q, 40);
-      if (q !== qojPicker.lastQuery) return;
+      var r = await QOJ.contests(q, 40, date);
+      if (key !== qojPicker.lastQuery) return;
       qojPicker.items = r.items || [];
+      if (!qojPicker.items.length && q && state.dataset) {
+        var d = qojDateOf(state.dataset.contest && state.dataset.contest.startMs);
+        if (d) {
+          qojPicker.date = d;
+          qojPickerTip('按「' + q + '」没找到，改成按开赛日期 ' + d + ' 查找 …');
+          qojPicker.loading = false;
+          return loadQojPicker('');
+        }
+      }
       list.innerHTML = qojPicker.items.length
         ? qojPicker.items.map(function (c) {
           return '<button class="qoj-picker-item" data-url="https://qoj.ac/contest/' + esc(c.id) + '">' +
@@ -1724,9 +1769,11 @@ function updateStatus() {
           toast('已选 QOJ 比赛 ' + b.dataset.url.replace(/^https?:\/\/qoj\.ac\/contest\//, '#'), 'ok');
         });
       });
-      qojPickerTip(q
-        ? '匹配 ' + (r.matched != null ? r.matched : qojPicker.items.length) + ' 场，显示前 ' + qojPicker.items.length + ' 场。'
-        : '共 ' + (r.total || 0) + ' 场，显示最近 ' + qojPicker.items.length + ' 场；输入关键词可以缩小范围。');
+      qojPickerTip(date
+        ? '开赛日期在 ' + date + ' 前后 2 天的比赛共 ' + (r.matched != null ? r.matched : qojPicker.items.length) + ' 场；也可以直接输入关键词按名字搜。'
+        : (q
+          ? '匹配 ' + (r.matched != null ? r.matched : qojPicker.items.length) + ' 场，显示前 ' + qojPicker.items.length + ' 场。'
+          : '共 ' + (r.total || 0) + ' 场，显示最近 ' + qojPicker.items.length + ' 场；输入关键词可以缩小范围。'));
     } catch (e) {
       list.innerHTML = '';
       qojPickerTip('读取失败：' + e.message, true);
