@@ -104,36 +104,19 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 启动器读 `_window.json`，直接作为 `--window-size` / `--window-position` 传给 Edge，窗口一创建就是目标尺寸；
 - 首次创建 `.app-profile/` 时会从默认 Edge 配置迁移 `Default\Local Storage\leveldb`，保留「我的队伍」「QOJ 关联」「上次比赛」；删掉这个目录等于恢复出厂。
 
-## 自绘标题栏
+## 自绘窗口（VPBoardBetter.exe）
 
-系统标题栏和页面配色不统一，而且点右上角关闭只会关掉浏览器窗口、本地服务还留着。做法是保留 Edge 渲染，
-用一个很小的 helper 把窗口的系统标题栏去掉，页面自己画一条 34px 的标题条。
+系统标题栏和页面配色不统一，而且点右上角关闭只会关掉浏览器窗口、本地服务还留着。Chromium 的 `--app` 窗口在新版本里
+没法从外面去掉系统标题栏（改 `WS_CAPTION` 会被它自己加回来，上游也删掉了相关 flag），所以改成自己开窗口装 WebView2：
 
-```
-start.bat → launch.vbs → tools/launch-hidden.ps1
-                             ├─ node server.js            （127.0.0.1:8787，页面与 /api/*）
-                             ├─ msedge --app=http://127.0.0.1:8787/
-                             └─ VPBoardBetter.exe -frame  （控制通道 127.0.0.1:8790）
-```
-
-helper 用 Win32 把窗口样式里的 `WS_CAPTION` 去掉（保留 `WS_THICKFRAME` 等，所以边缘拖拽、贴边吸附、
-双击最大化都还是系统的），然后每 400ms 看一眼窗口：窗口消失就清理并退出，caption 被加回来就再去一次。
-
-页面通过同源代理 `/api/frame/*` 调 helper（helper 只监听回环，端口写在 `_frame.json`）：
-
-| 通道 | 作用 |
-| --- | --- |
-| `GET /api/frame/state` | 返回 `{ok,active,maximized}`；helper 不在时 `active:false` |
-| `POST /api/frame/drag` | `ReleaseCapture` + `WM_NCLBUTTONDOWN(HTCAPTION)`，走系统拖动 |
-| `POST /api/frame/min` | 最小化 |
-| `POST /api/frame/max` | 最大化 / 还原（按当前状态切换） |
-| `POST /api/frame/close` | 关窗口，随后 helper 自己收尾 |
-
-关闭时的清理顺序：删 `_frame.json` → 结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的
-`msedge.exe`（QOJ 用的后台浏览器）→ 删 `%TEMP%\\vpb-qoj-*` → helper 退出。
-
-降级：没有 helper（直接开 `index.html`、或 exe 不存在）时页面不显示自绘标题条，窗口保留系统边框，
-所有功能照常，只是没有窗口按钮和「关窗口即退服务」。
+- `tools/launcher/Host.cs` → `VPBoardBetter.exe`：无边框窗口，自己画 34px 标题条（气球图标、标题、最小化/最大化/关闭）；
+- 启动时若 8787 没有监听，就先隐藏启动 `node server.js` 并等它就绪；
+- 页面仍由本地服务提供，WebView2 载入 `http://127.0.0.1:8787/`；
+- 标题条拖动走 `WM_NCLBUTTONDOWN(HTCAPTION)`，边缘命中测试返回 `HTLEFT` 等，所以贴边吸附、双击最大化、边缘缩放仍然是系统的；
+- 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
+- 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
+- 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；
+- 降级：WebView2 起不来时自动退回 `msedge --app=…` 窗口（老路径），只是没有自绘标题条。
 
 ## exe 的完整性级别检查
 
