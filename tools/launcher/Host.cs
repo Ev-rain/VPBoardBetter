@@ -629,25 +629,18 @@ static class Host
                 Close();
             };
             guard.Start();
-            var ensure = new System.Windows.Forms.Timer();
-            ensure.Interval = 2500;
-            ensure.Tick += delegate
+            // 立刻开始初始化 WebView2，不要等定时器：自动初始化并不可靠，
+            // 之前用 2.5s 的兜底定时器才发现，等于每次启动都白等 2.5 秒。
+            try
             {
-                ensure.Stop();
-                Host.Log("explicit ensure, body=" + _body.ClientSize.Width + "x" + _body.ClientSize.Height);
-                if (_view.CoreWebView2 != null) return;
-                try
+                System.Threading.Tasks.Task init = _view.EnsureCoreWebView2Async(null);
+                init.ContinueWith(delegate(System.Threading.Tasks.Task tt)
                 {
-                    System.Threading.Tasks.Task t2 = _view.EnsureCoreWebView2Async(null);
-                    t2.ContinueWith(delegate(System.Threading.Tasks.Task tt)
-                    {
-                        string msg = tt.IsFaulted ? (tt.Exception == null ? "faulted" : tt.Exception.GetBaseException().Message) : "ok";
-                        Host.Log("ensure result: " + msg);
-                    });
-                }
-                catch (Exception ex) { Host.Log("ensure threw: " + ex.Message); }
-            };
-            ensure.Start();
+                    string msg = tt.IsFaulted ? (tt.Exception == null ? "faulted" : tt.Exception.GetBaseException().Message) : "ok";
+                    Host.Log("ensure result: " + msg);
+                });
+            }
+            catch (Exception ex) { Host.Log("ensure threw: " + ex.Message); }
         }
 
         void OnBrowserInit(object s, CoreWebView2InitializationCompletedEventArgs e)
