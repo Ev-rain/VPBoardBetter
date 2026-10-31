@@ -280,18 +280,60 @@
   }
 
   /* ---------------- 时间轴缩放 ---------------- */
-  function scaleFor(contest, mode) {
-    if (mode !== '3h') return 1;
-    if (!contest.durationMs || contest.durationMs <= 0) return 1;
-    // 只压缩不拉伸：短于 3 小时的比赛在 3 小时模式下按 1:1 回放
-    return Math.min(1, (3 * 3600 * 1000) / contest.durationMs);
+  /* 非线性时间轴（只作用于 3 小时模式）：
+   * 赛前段 f(r) = m·r − (m−α)·r²/A —— 上凸抛物线，开场斜率 1（贴近真实），越往后越快，
+   * 到封榜点恰好落在 Tf；封榜段按比例线性 f(r) = Tf + s·(r−A)，保持封榜窗口不变形。
+   * 其中 A = 原时长 − 封榜时长，α = Tf / A，m = min(1, 2α)（保证单调）。 */
+  function buildTimeMap(contest, mode) {
+    var D = Math.max(0, contest.durationMs || 0);
+    var V = (mode === '3h' && D > 0) ? Math.min(3 * 3600 * 1000, D) : D;
+    var s = D > 0 ? V / D : 1;
+    var F = Math.min(Math.max(0, contest.frozenMs || 0), D);
+    var A = D - F;
+    var Tf = Math.max(0, V - F * s);
+    var alpha = A > 0 ? Tf / A : 1;
+    var m = Math.min(1, 2 * alpha);
+    var curved = s < 1;
+
+    function toVirtual(r) {
+      if (!curved) return r;
+      if (r <= 0) return 0;
+      if (r >= D) return V;
+      if (A <= 0) return s * r;
+      if (r <= A) return m * r - (m - alpha) * r * r / A;
+      return Tf + s * (r - A);
+    }
+
+    function toReal(t) {
+      if (!curved) return t;
+      if (t <= 0) return 0;
+      if (t >= V) return D;
+      if (A <= 0) return t / (s || 1);
+      if (t <= Tf) {
+        /* 解 m·r − (m−α)·r²/A = t，取小的那个根 */
+        var k = (m - alpha) / A;
+        if (k <= 0) return t / (m || 1);
+        var disc = m * m - 4 * k * t;
+        if (disc < 0) disc = 0;
+        return (m - Math.sqrt(disc)) / (2 * k);
+      }
+      return A + (t - Tf) / (s || 1);
+    }
+
+    return {
+      mode: mode, durationMs: D, virtualDuration: V, scale: s,
+      frozenMs: F, preMs: A, freezeStart: Tf,
+      alpha: alpha, startSlope: m, curved: curved,
+      toVirtual: toVirtual, toReal: toReal
+    };
   }
 
   function buildView(dataset, mode) {
     var contest = dataset.contest;
-    var scale = scaleFor(contest, mode);
-    var virtualDuration = contest.durationMs * scale;
-    var freezeStart = Math.max(0, virtualDuration - contest.frozenMs * scale);
+    var timeMap = buildTimeMap(contest, mode);
+    var scale = timeMap.scale;
+    var virtualDuration = timeMap.virtualDuration;
+    var freezeStart = timeMap.freezeStart;
 
     var teams = dataset.teams.slice();
     var myId = dataset.myTeam ? dataset.myTeam.id : null;
@@ -307,7 +349,7 @@
       var r = dataset.runs[i];
       runs.push({
         teamId: r.teamId, p: r.p,
-        t: r.realTs * scale,
+        t: timeMap.toVirtual(r.realTs),
         realTs: r.realTs,
         st: r.st, raw: r.raw, manual: false
       });
@@ -344,6 +386,7 @@
       runs: runs,
       byTeam: byTeam,
       scale: scale,
+      timeMap: timeMap,
       mode: mode,
       virtualDuration: virtualDuration,
       freezeStart: freezeStart,
@@ -491,7 +534,7 @@
     normalizeRuns: normalizeRuns,
     normalizeStatus: normalizeStatus,
     buildDataset: buildDataset,
-    scaleFor: scaleFor,
+    buildTimeMap: buildTimeMap,
     buildView: buildView,
     computeStandings: computeStandings,
     fmtClock: fmtClock,

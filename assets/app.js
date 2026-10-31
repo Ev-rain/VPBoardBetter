@@ -321,7 +321,8 @@
     updateClock();
     renderBoard(true);
     savePrefs();
-    toast(mode === '3h' ? '已切换到 3 小时模式 · 时间轴 ×' + state.view.scale.toFixed(2) : '已切换到完整时长模式', '');
+    if (!$('#helpOverlay').hidden) renderTimeCurve(null);
+    toast(mode === '3h' ? '已切换到 3 小时模式 · 开场贴近实时，越往后越快' : '已切换到完整时长模式', '');
   }
 
   /* ---------------- 顶栏 / 状态栏 ---------------- */
@@ -347,7 +348,7 @@
   function updateLegendMode() {
     if (!state.view) { els.legendMode.textContent = ''; return; }
     if (state.mode === '3h') {
-      els.legendMode.textContent = '3h 模式 · ×' + state.view.scale.toFixed(2);
+      els.legendMode.textContent = '3h 模式 · 非线性压缩';
     } else {
       els.legendMode.textContent = '原始时长';
     }
@@ -553,7 +554,7 @@ function updateStatus() {
         title = label2 + ' 题 · 通过 ' + cell.minutes + ' 分钟' +
           (cell.attempts ? '（' + cell.attempts + ' 次失败，该题罚时 +' + (cell.minutes + cell.attempts * penPer) + '）' : '');
         if (state.mode === '3h') {
-          title += '\n时间轴压缩：原始 ' + VP.fmtClock(cell.t / state.view.scale) + ' → 出现在 ' + VP.fmtClock(cell.t) +
+          title += '\n时间轴压缩：原始 ' + VP.fmtClock(state.view.timeMap.toReal(cell.t)) + ' → 出现在 ' + VP.fmtClock(cell.t) +
             '\n该题罚时按压缩后时间算约 +' + (Math.floor(cell.t / 60000) + cell.attempts * penPer) + ' 分钟';
         }
         if (cell.manual) title += '\n（手动记录）';
@@ -1022,6 +1023,80 @@ function updateStatus() {
   function openModal(sel) { var m = $(sel); if (m) m.hidden = false; }
   function closeModal(m) { if (m) m.hidden = true; }
 
+  /* ---------------- 时间曲线（帮助弹窗里的小图） ---------------- */
+  var tcState = null;
+
+  function fmtShort(ms) { return VP.fmtClock(ms).slice(0, 5); }
+
+  function renderTimeCurve(hoverMs) {
+    var svg = $('#tcSvg');
+    if (!svg) return;
+    var W = 560, H = 190, padL = 46, padR = 16, padT = 14, padB = 30;
+    var iw = W - padL - padR, ih = H - padT - padB;
+    var view = state.view;
+    var map = view ? view.timeMap : VP.buildTimeMap({ durationMs: 5 * 3600e3, frozenMs: 3600e3 }, '3h');
+    var D = map.durationMs || 1, V = map.virtualDuration || 1;
+    var X = function (r) { return padL + (r / D) * iw; };
+    var Y = function (t) { return padT + ih - (t / V) * ih; };
+    var out = [];
+
+    for (var h = 0; h * 3600e3 <= D; h++) {
+      var rx = h * 3600e3;
+      out.push('<line class="tc-grid" x1="' + X(rx).toFixed(1) + '" y1="' + padT + '" x2="' + X(rx).toFixed(1) + '" y2="' + (padT + ih) + '"/>');
+      out.push('<text class="tc-tick" x="' + X(rx).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle">' + h + 'h</text>');
+    }
+    for (var q = 0; q * 3600e3 <= V; q++) {
+      var ty = q * 3600e3;
+      out.push('<line class="tc-grid" x1="' + padL + '" y1="' + Y(ty).toFixed(1) + '" x2="' + (padL + iw) + '" y2="' + Y(ty).toFixed(1) + '"/>');
+      out.push('<text class="tc-tick" x="' + (padL - 8) + '" y="' + (Y(ty) + 4).toFixed(1) + '" text-anchor="end">' + q + 'h</text>');
+    }
+
+    out.push('<line class="tc-linear" x1="' + X(0) + '" y1="' + Y(0) + '" x2="' + X(D) + '" y2="' + Y(V) + '"/>');
+
+    if (map.frozenMs > 0) {
+      out.push('<line class="tc-freeze" x1="' + padL + '" y1="' + Y(map.freezeStart).toFixed(1) + '" x2="' + (padL + iw) + '" y2="' + Y(map.freezeStart).toFixed(1) + '"/>');
+      out.push('<text class="tc-tick" x="' + (padL + iw - 2) + '" y="' + (Y(map.freezeStart) - 6).toFixed(1) + '" text-anchor="end">封榜 ' + fmtShort(map.freezeStart) + '</text>');
+    }
+
+    var pts = [];
+    for (var i = 0; i <= 160; i++) {
+      var r = D * i / 160;
+      pts.push(X(r).toFixed(1) + ',' + Y(map.toVirtual(r)).toFixed(1));
+    }
+    out.push('<polyline class="tc-curve" points="' + pts.join(' ') + '"/>');
+
+    var tipR = null;
+    if (hoverMs != null) {
+      tipR = Math.max(0, Math.min(D, hoverMs));
+      out.push('<line class="tc-hover" x1="' + X(tipR).toFixed(1) + '" y1="' + padT + '" x2="' + X(tipR).toFixed(1) + '" y2="' + (padT + ih) + '"/>');
+      out.push('<circle class="tc-dot" cx="' + X(tipR).toFixed(1) + '" cy="' + Y(map.toVirtual(tipR)).toFixed(1) + '" r="3.5"/>');
+    }
+    out.push('<rect class="tc-hit" x="' + padL + '" y="' + padT + '" width="' + iw + '" height="' + ih + '"/>');
+    svg.innerHTML = out.join('');
+
+    var tip = $('#tcTip');
+    if (tip) {
+      tip.textContent = tipR == null
+        ? '横轴是原比赛时间，纵轴是这里显示的时间；灰色虚线是旧的等比例压缩，作对照。把鼠标移到图上可以看具体时刻。'
+        : '原始 ' + VP.fmtClock(tipR) + ' → 显示 ' + VP.fmtClock(map.toVirtual(tipR)) +
+          (map.curved ? '' : '（当前模式不做压缩）');
+    }
+
+    tcState = { map: map, padL: padL, padT: padT, iw: iw, ih: ih, W: W };
+    if (!svg.dataset.bound) {
+      svg.dataset.bound = '1';
+      svg.addEventListener('mousemove', function (e) {
+        if (!tcState) return;
+        var rect = svg.getBoundingClientRect();
+        if (!rect.width) return;
+        var mx = (e.clientX - rect.left) / rect.width * W;
+        var frac = (mx - padL) / iw;
+        renderTimeCurve(Math.max(0, Math.min(1, frac)) * tcState.map.durationMs);
+      });
+      svg.addEventListener('mouseleave', function () { renderTimeCurve(null); });
+    }
+  }
+
   function bindModalDismiss() {
     $$('.overlay').forEach(function (ov) {
       ov.addEventListener('mousedown', function (e) {
@@ -1187,7 +1262,7 @@ function updateStatus() {
     $('#btnData').addEventListener('click', openDataModal);
     $('#emptyLoad').addEventListener('click', openDataModal);
     $('#emptyFiles').addEventListener('click', function () { $('#fileInput').click(); });
-    $('#btnHelp').addEventListener('click', function () { openModal('#helpOverlay'); });
+    $('#btnHelp').addEventListener('click', function () { openModal('#helpOverlay'); renderTimeCurve(null); });
     $('#btnMyTeam').addEventListener('click', openMyTeam);
     $('#drawerClose').addEventListener('click', closeDrawer);
 
@@ -2149,6 +2224,7 @@ window.VPApp = {
     state: state,
     openQojModal: openQojModal,
     applyPayload: applyPayload,
-    loadQoj: loadQoj
+    loadQoj: loadQoj,
+    renderTimeCurve: renderTimeCurve
   };
 })();

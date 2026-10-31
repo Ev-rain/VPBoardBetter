@@ -60,7 +60,30 @@ ok(Math.abs(view3.virtualDuration - 3 * 3600e3) < 1, '虚拟时长 = 3h', view3.
 ok(Math.abs(view3.freezeStart - (3 * 3600e3 - 36 * 60e3)) < 1, '封榜起点 = 2:24:00', view3.freezeStart);
 ok(Math.abs((view3.virtualDuration - view3.freezeStart) - 36 * 60e3) < 1, '封榜时长 = 36 分钟');
 
-// 任取一个 5 小时附近通过的提交（同一队同一题最早的一次 AC），验证 3 小时模式下的出现时刻是 0.6 倍
+console.log('— 时间映射曲线 —');
+const tm = view3.timeMap;
+ok(!!tm && typeof tm.toVirtual === 'function', '时间映射可用');
+ok(Math.abs(tm.toVirtual(0)) < 1, '映射 f(0) = 0');
+ok(Math.abs(tm.toVirtual(5 * 3600e3) - 3 * 3600e3) < 1, '映射 f(5h) = 3h');
+ok(Math.abs(tm.toVirtual(4 * 3600e3) - view3.freezeStart) < 1, '映射 f(4:00) = 封榜点');
+ok(Math.abs(tm.toVirtual(5 * 60e3) - 5 * 60e3) < 15e3, '开场 5 分钟几乎原样出现', VP.fmtClock(tm.toVirtual(5 * 60e3)));
+{
+  const oneH = tm.toVirtual(3600e3);
+  ok(oneH > 50 * 60e3 && oneH < 58 * 60e3, '1:00 的题出现在 50–58 分钟之间', VP.fmtClock(oneH));
+  let mono = true;
+  for (let i = 1; i <= 200; i++) {
+    if (tm.toVirtual(i * 5 * 3600e3 / 200) < tm.toVirtual((i - 1) * 5 * 3600e3 / 200) - 1) mono = false;
+  }
+  ok(mono, '映射单调不减');
+  let invErr = 0;
+  for (let i = 0; i <= 100; i++) {
+    const r = i * 5 * 3600e3 / 100;
+    invErr = Math.max(invErr, Math.abs(tm.toReal(tm.toVirtual(r)) - r));
+  }
+  ok(invErr < 1000, '反函数往返误差 < 1 秒', invErr);
+}
+
+// 任取一个 5 小时附近通过的提交（同一队同一题最早的一次 AC），验证 3 小时模式下的出现时刻符合曲线
 const firstAc = new Map();
 ds.runs.forEach(r => { if (r.st === 'AC') { const k = r.teamId + '|' + r.p; if (!firstAc.has(k)) firstAc.set(k, r); } });
 const lateAc = Array.from(firstAc.values()).filter(r => r.realTs > 4.9 * 3600e3).sort((a, b) => b.realTs - a.realTs)[0];
@@ -73,7 +96,7 @@ if (lateAc) {
   ok(cell.minutes === Math.floor(lateAc.realTs / 60000), '罚时用原时间', [cell.minutes, lateAc.realTs]);
   if (cell.state === 'AC') {
     console.log('    ' + team.name + '  ' + ds.problems[lateAc.p].label + '  原 ' + VP.fmtClock(lateAc.realTs) + ' → 虚拟 ' + VP.fmtClock(cell.t));
-    ok(Math.abs(cell.t - lateAc.realTs * 0.6) < 1, '虚拟出现时刻 = 原始 × 0.6');
+    ok(Math.abs(cell.t - tm.toVirtual(lateAc.realTs)) < 1, '虚拟出现时刻 = 曲线映射值');
   }
 }
 
@@ -85,7 +108,7 @@ if (lateAc) {
     const row = rowsById.get(run.teamId);
     const cell = row && row.cells[run.p];
     checked++;
-    if (!cell || cell.state !== 'AC' || Math.abs(cell.t - run.realTs * 0.6) > 1) bad++;
+    if (!cell || cell.state !== 'AC' || Math.abs(cell.t - tm.toVirtual(run.realTs)) > 1) bad++;
   }
   ok(bad === 0, '全部 ' + checked + ' 个首次 AC 的虚拟时刻都精确缩放', bad);
 }

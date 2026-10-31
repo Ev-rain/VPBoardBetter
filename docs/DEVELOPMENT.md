@@ -44,9 +44,15 @@ fixtures/                真实比赛数据样例（2025 ICPC 南京站，359 �
 
 ## 时间轴模型
 
-- `scale = min(1, 3h ÷ 原时长)`，完整时长模式为 1；
-- 提交的虚拟时刻 `t = realTs × scale`，封榜起点同样按 `scale` 压缩；
+`assets/core.js` 的 `buildTimeMap(contest, mode)` 返回 `toVirtual(r)` / `toReal(t)`，`buildView` 用它把提交的原始时刻换成虚拟时刻。
+
+- 完整时长模式：恒等映射，`V = D`；
+- 3 小时模式：`V = min(3h, D)`、`s = V / D`，`F` 为封榜时长、`A = D − F`、`Tf = V − F·s`（封榜点）；
+  - 赛前段 `r ≤ A`：`f(r) = m·r − (m−α)·r²/A`，其中 `α = Tf/A`、`m = min(1, 2α)`；上凸抛物线，`f(0)=0`、`f(A)=Tf`、开场斜率 1、收尾斜率 `2α−1`；
+  - 封榜段 `r > A`：`f(r) = Tf + s·(r−A)`，即封榜区仍按 `s` 比例线性压缩（5 小时比赛 36 分钟）；
+  - `A = 0` 时退化为整体线性 `s`；`D ≤ 3h` 时 `s = 1`，恒等。
 - 罚时按原始时间算；手动记录按录入的虚拟时间算。
+- 帮助弹窗里的曲线图由 `assets/app.js` 的 `renderTimeCurve()` 用同一份 `toVirtual` 绘制，`toReal` 用于格子上「原始时刻」的悬停提示。
 
 ## 缓存策略
 
@@ -108,7 +114,8 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 ## 测试
 
 ```
-node tools/test-core.js        # 核心算法（359 队/4075 提交，首次 AC 缩放、封榜不泄露、奖牌线）
+node tools/test-core.js        # 核心算法（359 队/4075 提交，时间映射、封榜不泄露、奖牌线）
+node tools/test-curve.js       # 帮助里的时间曲线（Node + 最小 DOM 桩，检查生成的 SVG）
 node --check assets/app.js     # 语法
 tools/shot.ps1                 # 无头 Edge 截图（需要本地服务在跑）
 ```
