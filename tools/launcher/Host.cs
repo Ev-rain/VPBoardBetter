@@ -333,6 +333,8 @@ static class Host
         bool _testFailed;
         int _resizeBorder = 6;
         const int GRIP = 5;
+        const int BAR_H = 42;
+        const int BTN_H = 40;
 
         public Frame()
         {
@@ -341,14 +343,14 @@ static class Host
             Text = "VP Board Better";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
-            BackColor = Color.FromArgb(16, 18, 22);
+            BackColor = Color.FromArgb(10, 14, 19);
             MinimumSize = new Size(900, 600);
             Size = new Size(_state.w, _state.h);
             Location = new Point(_state.x, _state.y);
             KeyPreview = false;
 
             _bar = new Panel();
-            _bar.Height = 36;
+            _bar.Height = BAR_H;
             _bar.BackColor = Color.FromArgb(22, 25, 30);
             _bar.Paint += PaintBar;
             _bar.MouseDown += delegate(object s, MouseEventArgs e)
@@ -370,7 +372,7 @@ static class Host
             _title.ForeColor = Color.FromArgb(226, 232, 240);
             _title.BackColor = Color.Transparent;
             _title.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-            _title.SetBounds(44, 0, 400, 36);
+            _title.SetBounds(44, 0, 400, BAR_H);
             _title.TextAlign = ContentAlignment.MiddleLeft;
             _title.MouseDown += delegate(object s, MouseEventArgs e)
             {
@@ -519,7 +521,7 @@ static class Host
             if (_bar == null || _body == null) return;
             int barH = _bar.Height;
             _bar.SetBounds(0, 0, ClientSize.Width, barH);
-            _body.SetBounds(0, barH, ClientSize.Width, Math.Max(0, ClientSize.Height - barH));
+            _body.SetBounds(GRIP, barH, Math.Max(0, ClientSize.Width - GRIP * 2), Math.Max(0, ClientSize.Height - barH - GRIP));
             LayoutButtons();
             UpdateMaxGlyph();
         }
@@ -527,11 +529,11 @@ static class Host
         void LayoutButtons()
         {
             if (_bar == null || _min == null) return;
-            int y = Math.Max(0, (_bar.Height - 36) / 2);
+            int y = 0;
             int right = _bar.ClientSize.Width;
-            _close.SetBounds(right - 46, y, 46, 36);
-            _max.SetBounds(right - 92, y, 46, 36);
-            _min.SetBounds(right - 138, y, 46, 36);
+            _close.SetBounds(right - 46, y, 46, BTN_H);
+            _max.SetBounds(right - 92, y, 46, BTN_H);
+            _min.SetBounds(right - 138, y, 46, BTN_H);
         }
 
         void PaintBar(object s, PaintEventArgs e)
@@ -540,14 +542,17 @@ static class Host
             Rectangle r = _bar.ClientRectangle;
             using (var brush = new LinearGradientBrush(r, Color.FromArgb(19, 29, 40), Color.FromArgb(11, 16, 22), 90f))
                 g.FillRectangle(brush, r);
-            using (var pen = new Pen(Color.FromArgb(255, 255, 255, 20), 1f))
+            using (var pen = new Pen(Color.FromArgb(255, 201, 60), 1f))
+            {
+                g.DrawLine(pen, 0, r.Height - 2, r.Width, r.Height - 2);
                 g.DrawLine(pen, 0, r.Height - 1, r.Width, r.Height - 1);
+            }
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
             try
             {
                 if (_barIcon == null) _barIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-                if (_barIcon != null) g.DrawIcon(_barIcon, new Rectangle(12, 8, 20, 20));
+                if (_barIcon != null) g.DrawIcon(_barIcon, new Rectangle(12, (r.Height - 22) / 2, 22, 22));
             }
             catch { }
         }
@@ -688,6 +693,12 @@ static class Host
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x0083) // WM_NCCALCSIZE：客户区铺满整个窗口，去掉系统那圈边框
+            {
+                if (m.WParam != IntPtr.Zero) m.Result = IntPtr.Zero;
+                return;
+            }
+
             if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
             {
                 {
