@@ -13,4 +13,4 @@ foreach ($c in $conns) {
     Write-Host "[x] 结束进程 $($c.OwningProcess) 失败: $($_.Exception.Message)"
   }
 }
-Write-Host "[i] 已关闭。要重新打开，运行 start.bat 即可。"
+Write-Host "[i] 已关闭。要重新打开，双击 VPBoardBetter.exe 即可。"

@@ -141,7 +141,7 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 
 `VPBoardBetter.exe` 用 `asInvoker` 清单，不请求提升。启动时读自身令牌的完整性级别（`GetTokenInformation(TokenIntegrityLevel)`）：
 
-- Medium 及以上：把 `start.bat` 交给 Shell 执行；
+- Medium 及以上：正常启动（起服务、开窗口、关窗时清理服务）；
 - Low：从带 Low 标签的目录启动会出现这种情况，Chromium 在该级别下渲染不出页面，会表现为 `--app` 窗口空白。此时 exe 直接弹窗提示处理办法，而不是留一个白窗口。
 
 ## 测试
