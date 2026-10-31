@@ -109,7 +109,9 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 系统标题栏和页面配色不统一，而且点右上角关闭只会关掉浏览器窗口、本地服务还留着。Chromium 的 `--app` 窗口在新版本里
 没法从外面去掉系统标题栏（改 `WS_CAPTION` 会被它自己加回来，上游也删掉了相关 flag），所以改成自己开窗口装 WebView2：
 
-- `tools/launcher/Host.cs` → `VPBoardBetter.exe`：无边框窗口，自己画 34px 标题条（气球图标、标题、最小化/最大化/关闭）；
+- `tools/launcher/Host.cs` → `VPBoardBetter.exe`：无边框窗口，自己画 36px 标题条（气球图标、比赛名、最小化/最大化/关闭）；
+- 三个窗口按钮是自绘的 `TitleButton : Control`：平时透明、只画 `Segoe Fluent Icons` 字形（`\uE921` / `\uE922` / `\uE8BB`，最大化后换成还原 `\uE923`），鼠标移上去才填一层浅色底，关闭按钮 hover 是 `#e81123` 红底白字——这样不会出现系统按钮那种灰方块；
+- 标题条底色用和页面 `.topbar` 同色系的纵向渐变（`#131d28` → `#0b1016`），底部一条 1px 半透明高光，接缝不会突兀；
 - 启动时若 8787 没有监听，就先隐藏启动 `node server.js` 并等它就绪；
 - 页面仍由本地服务提供，WebView2 载入 `http://127.0.0.1:8787/`；
 - 标题条拖动走 `WM_NCLBUTTONDOWN(HTCAPTION)`，边缘命中测试返回 `HTLEFT` 等，所以贴边吸附、双击最大化、边缘缩放仍然是系统的；
@@ -118,6 +120,7 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 于是非最大化时是圆角窗口（Windows 11 的 DWM 圆角），最大化时自动变直角；
 - 标题条左侧图标直接取 exe 内嵌图标（`Icon.ExtractAssociatedIcon`，来自 `tools/launcher/app.ico`，也就是黄色气球）；
 - 标题条文字跟着页面 `document.title` 走：`CoreWebView2.DocumentTitleChanged` 里把 `" · VP Board Better"` 后缀去掉，只留比赛名；还没加载比赛时页面标题是 `VP Board Better · 虚拟榜单`，此时标题条留空；
+- 宿主加载的是 `http://127.0.0.1:8787/?host=1`，页面看到 `host=1` 会给 `<body>` 加 `.hosted`，`.hosted .brand { display: none }` 把页面自己那套品牌栏藏掉——标题条上已经有一个气球，页面里就不该再有第二个；
 - 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
 - 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；

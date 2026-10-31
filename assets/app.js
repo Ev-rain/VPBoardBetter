@@ -1449,6 +1449,7 @@ function updateStatus() {
     if (qs) {
       if (qs.get('mode') === '3h' || qs.get('mode') === 'full') state.mode = qs.get('mode');
       if (qs.has('official')) state.officialOnly = qs.get('official') !== '0';
+      if (qs.get('host') === '1') document.body.classList.add('hosted');
     }
 
     state.myTeamId = null;

@@ -323,7 +323,7 @@ static class Host
         Panel _bar, _body;
         Label _title, _splash;
         Icon _barIcon;
-        Button _min, _max, _close;
+        TitleButton _min, _max, _close;
         WebView2 _view;
         System.Windows.Forms.Timer _saveTimer;
         WinState _state;
@@ -380,11 +380,9 @@ static class Host
             };
             _title.MouseDoubleClick += delegate(object s, MouseEventArgs e) { ToggleMax(); };
 
-            _min = MakeButton("\u2013", delegate { WindowState = FormWindowState.Minimized; });
-            _max = MakeButton("\u25A1", delegate { ToggleMax(); });
-            _close = MakeButton("\u2715", delegate { Close(); });
-            _close.FlatAppearance.MouseOverBackColor = Color.FromArgb(232, 17, 35);
-            _close.FlatAppearance.MouseDownBackColor = Color.FromArgb(200, 10, 25);
+            _min = MakeButton("\uE921", false, delegate { WindowState = FormWindowState.Minimized; });
+            _max = MakeButton("\uE922", false, delegate { ToggleMax(); });
+            _close = MakeButton("\uE8BB", true, delegate { Close(); });
 
             _bar.Controls.Add(_title);
             _bar.Controls.Add(_min);
@@ -434,20 +432,72 @@ static class Host
             }
         }
 
-        Button MakeButton(string glyph, EventHandler onClick)
+        static string IconFont()
         {
-            var b = new Button();
-            b.Text = glyph;
+            foreach (FontFamily f in FontFamily.Families)
+                if (string.Equals(f.Name, "Segoe Fluent Icons", StringComparison.OrdinalIgnoreCase)) return "Segoe Fluent Icons";
+            return "Segoe MDL2 Assets";
+        }
+
+        void UpdateMaxGlyph()
+        {
+            if (_max != null) _max.Text = WindowState == FormWindowState.Maximized ? "\uE923" : "\uE922";
+        }
+
+        TitleButton MakeButton(string glyph, bool isClose, EventHandler onClick)
+        {
+            var b = new TitleButton(glyph, isClose);
             b.Width = 46;
             b.Height = 36;
-            b.FlatStyle = FlatStyle.Flat;
-            b.FlatAppearance.BorderSize = 0;
-            b.BackColor = Color.Transparent;
-            b.ForeColor = Color.FromArgb(200, 208, 220);
             b.TabStop = false;
-            b.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
             b.Click += onClick;
             return b;
+        }
+
+        /// <summary>标题条按钮：自己画 hover 底色和字形，不用系统主题。</summary>
+        sealed class TitleButton : Control
+        {
+            readonly bool _isClose;
+            bool _hover;
+
+            public TitleButton(string glyph, bool isClose)
+            {
+                Text = glyph;
+                _isClose = isClose;
+                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                SetStyle(ControlStyles.SupportsTransparentBackColor, true);
+                BackColor = Color.Transparent;
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                _hover = true;
+                Invalidate();
+                base.OnMouseEnter(e);
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                _hover = false;
+                Invalidate();
+                base.OnMouseLeave(e);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                if (_hover)
+                {
+                    Color bg = _isClose ? Color.FromArgb(232, 17, 35) : Color.FromArgb(38, 255, 255, 255);
+                    using (var brush = new SolidBrush(bg)) g.FillRectangle(brush, ClientRectangle);
+                }
+                Color fg = _isClose && _hover ? Color.White : Color.FromArgb(200, 208, 220);
+                using (var font = new Font(IconFont(), 10f, FontStyle.Regular))
+                {
+                    TextRenderer.DrawText(g, Text, font, ClientRectangle, fg,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                }
+            }
         }
 
         void UpdateBarTitle()
@@ -463,6 +513,7 @@ static class Host
             try { Text = name.Length == 0 ? "VP Board Better" : name + " · VP Board Better"; } catch { }
         }
 
+
         void LayoutParts()
         {
             if (_bar == null || _body == null) return;
@@ -470,6 +521,7 @@ static class Host
             _bar.SetBounds(0, 0, ClientSize.Width, barH);
             _body.SetBounds(0, barH, ClientSize.Width, Math.Max(0, ClientSize.Height - barH));
             LayoutButtons();
+            UpdateMaxGlyph();
         }
 
         void LayoutButtons()
@@ -486,8 +538,10 @@ static class Host
         {
             Graphics g = e.Graphics;
             Rectangle r = _bar.ClientRectangle;
-            using (var brush = new LinearGradientBrush(r, Color.FromArgb(26, 30, 37), Color.FromArgb(20, 23, 28), 0f))
+            using (var brush = new LinearGradientBrush(r, Color.FromArgb(19, 29, 40), Color.FromArgb(11, 16, 22), 90f))
                 g.FillRectangle(brush, r);
+            using (var pen = new Pen(Color.FromArgb(255, 255, 255, 20), 1f))
+                g.DrawLine(pen, 0, r.Height - 1, r.Width, r.Height - 1);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
             try
@@ -617,7 +671,7 @@ static class Host
                 if (_splash != null) _splash.Visible = false;
                     if (_selfTest) { _testFailed = false; var t = new System.Windows.Forms.Timer(); t.Interval = 1200; t.Tick += delegate { t.Stop(); Close(); }; t.Start(); }
                 };
-                _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/");
+                _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/?host=1");
             }
             catch (Exception ex) { Host.Log("navigate err " + ex.Message); }
         }

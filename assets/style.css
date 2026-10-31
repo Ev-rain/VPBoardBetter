@@ -147,6 +147,9 @@ body.framed .app { grid-template-rows: 34px auto auto auto 1fr auto; }
   pointer-events: none;
 }
 
+/* 由 VPBoardBetter.exe 宿主打开时，标题条已经显示品牌，页面内不再重复 */
+.hosted .brand { display: none; }
+
 .brand {
   display: flex;
   align-items: center;
