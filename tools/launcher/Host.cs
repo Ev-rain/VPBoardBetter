@@ -66,16 +66,8 @@ static class Host
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
-        bool started = false;
-        if (!PortOpen()) { _server = StartServer(); started = _server != null; }
-        if (!PortOpen())
-        {
-            Log("服务没有起来");
-            if (!Has(args, "-selftest"))
-                MessageBox.Show("本地服务没有启动成功（端口 " + PORT + "）。请确认 node 在 PATH 里，或查看 " + LogPath + "。",
-                    "VP Board Better", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
-        }
+        if (PortOpen()) PortReady = true;
+        else StartServerInBackground();
 
         var f = new Frame();
         f.Shown += delegate { f.StartBrowser(self); };
@@ -136,16 +128,31 @@ static class Host
             psi.CreateNoWindow = true;
             psi.WindowStyle = ProcessWindowStyle.Hidden;
             Process p = Process.Start(psi);
-                        Log("已启动 node server.js pid=" + p.Id);
-            for (int i = 0; i < 60 && !PortOpen(); i++)
-            {
-                Thread.Sleep(250);
-                if (i % 8 == 7) Log("等待服务… " + ((i + 1) / 4) + "s exited=" + p.HasExited);
-            }
-            if (p.HasExited) Log("node 已退出 code=" + p.ExitCode);
+            Log("已启动 node server.js pid=" + p.Id);
             return p;
         }
         catch (Exception ex) { Log("启动 node 失败: " + ex.Message); return null; }
+    }
+
+    public static bool PortReady;
+
+    static void StartServerInBackground()
+    {
+        var t = new Thread(delegate()
+        {
+            Process p = StartServer();
+            _server = p;
+            if (p == null) return;
+            for (int i = 0; i < 300; i++)
+            {
+                if (PortOpen()) { PortReady = true; Log("服务已就绪 +" + (i * 100) + "ms"); return; }
+                Thread.Sleep(100);
+            }
+            Log("服务 30s 未就绪");
+        });
+        t.IsBackground = true;
+        t.Name = "server-start";
+        t.Start();
     }
 
     static void StopEverything()
@@ -318,10 +325,78 @@ static class Host
 
     // ---------- 窗口 ----------
 
+    class Splash : Control
+    {
+        readonly System.Windows.Forms.Timer _anim;
+        int _phase;
+        string _text = "正在载入榜单…";
+        bool _error;
+
+        public Splash()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            Dock = DockStyle.Fill;
+            BackColor = Color.FromArgb(10, 14, 19);
+            _anim = new System.Windows.Forms.Timer { Interval = 33 };
+            _anim.Tick += delegate { _phase = (_phase + 5) % 360; Invalidate(); };
+            _anim.Start();
+        }
+
+        public void SetError(string text)
+        {
+            _text = text;
+            _error = true;
+            Invalidate();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _anim.Dispose();
+            base.Dispose(disposing);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(Color.FromArgb(10, 14, 19));
+            int cx = Width / 2, cy = Height / 2;
+            try
+            {
+                using (Icon ico = Icon.ExtractAssociatedIcon(Application.ExecutablePath))
+                {
+                    if (ico != null) g.DrawIcon(ico, new Rectangle(cx - 28, cy - 66, 56, 56));
+                }
+            }
+            catch { }
+            using (var nameFont = new Font("Segoe UI Semibold", 9f))
+                TextRenderer.DrawText(g, "VP BOARD BETTER", nameFont, new Rectangle(0, cy + 2, Width, 22),
+                    Color.FromArgb(150, 162, 178), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+
+            int barW = Math.Min(260, Math.Max(120, Width / 4));
+            int x = cx - barW / 2, y = cy + 34;
+            using (var bg = new SolidBrush(Color.FromArgb(26, 33, 42)))
+                g.FillRectangle(bg, x, y, barW, 3);
+            if (!_error)
+            {
+                int w1 = 72;
+                int pos = (int)((Math.Sin(_phase * Math.PI / 180.0) * 0.5 + 0.5) * (barW - w1));
+                using (var fg = new LinearGradientBrush(new Rectangle(x + pos, y, w1, 3),
+                    Color.FromArgb(120, 201, 60), Color.FromArgb(255, 201, 60), 0f))
+                    g.FillRectangle(fg, x + pos, y, w1, 3);
+            }
+
+            using (var tipFont = new Font("Segoe UI", 9f))
+                TextRenderer.DrawText(g, _text, tipFont, new Rectangle(0, y + 12, Width, 22),
+                    _error ? Color.FromArgb(226, 108, 108) : Color.FromArgb(110, 122, 138),
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+    }
+
     public class Frame : Form
     {
         Panel _bar, _body;
-        Label _title, _splash;
+        Label _title;
+        Splash _splash;
         Icon _barIcon;
         TitleButton _min, _max, _close;
         WebView2 _view;
@@ -597,13 +672,7 @@ static class Host
             _view.CoreWebView2InitializationCompleted += OnBrowserInit;
             Host.Log("adding WebView2 control");
             try { _body.Controls.Add(_view); } catch (Exception ex) { Host.Log("add failed: " + ex); }
-            _splash = new Label();
-            _splash.Text = "正在启动…";
-            _splash.Dock = DockStyle.Fill;
-            _splash.TextAlign = ContentAlignment.MiddleCenter;
-            _splash.BackColor = Color.FromArgb(16, 18, 22);
-            _splash.ForeColor = Color.FromArgb(130, 142, 158);
-            _splash.Font = new Font("Segoe UI", 10f, FontStyle.Regular);
+            _splash = new Splash();
             _body.Controls.Add(_splash);
             _splash.BringToFront();
             var probe = new System.Windows.Forms.Timer();
@@ -669,9 +738,39 @@ static class Host
                 if (_splash != null) _splash.Visible = false;
                     if (_selfTest) { _testFailed = false; var t = new System.Windows.Forms.Timer(); t.Interval = 1200; t.Tick += delegate { t.Stop(); Close(); }; t.Start(); }
                 };
-                _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/?host=1");
+                NavigateWhenReady();
             }
             catch (Exception ex) { Host.Log("navigate err " + ex.Message); }
+        }
+
+        void NavigateWhenReady()
+        {
+            if (Host.PortReady)
+            {
+                try { _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/?host=1"); }
+                catch (Exception ex) { Host.Log("navigate err " + ex.Message); }
+                return;
+            }
+            var t = new System.Windows.Forms.Timer { Interval = 60 };
+            int ticks = 0;
+            t.Tick += delegate
+            {
+                ticks++;
+                if (Host.PortReady)
+                {
+                    t.Stop(); t.Dispose();
+                    try { _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/?host=1"); }
+                    catch (Exception ex) { Host.Log("navigate err " + ex.Message); }
+                    return;
+                }
+                if (ticks > 500)
+                {
+                    t.Stop(); t.Dispose();
+                    Host.Log("等待服务超时");
+                    if (_splash != null) _splash.SetError("本地服务没有启动（端口 " + PORT + "）");
+                }
+            };
+            t.Start();
         }
 
         void OnClosing(object s, FormClosingEventArgs e)

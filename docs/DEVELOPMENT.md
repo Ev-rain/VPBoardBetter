@@ -129,6 +129,14 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；
 - 降级：WebView2 起不来时自动退回 `msedge --app=…` 窗口（老路径），只是没有自绘标题条。
 
+## 启动流程与耗时
+
+- `Main` 里先探测 8787：已经在跑就直接用，否则 `StartServerInBackground()` 起一个后台线程拉 `node server.js`，**不阻塞**创建窗口；
+- 窗口先出现并显示自绘的 `Splash`（气球图标 + VP BOARD BETTER + 不定进度条 + 「正在载入榜单…」），不是黑屏；
+- `Shown` 里立刻 `EnsureCoreWebView2Async`（不再等 2.5s 的兜底定时器——那 2.5 秒是纯等待，初始化本身只要约 0.3s）；
+- WebView2 就绪后再等 `PortReady`（后台线程每 100ms 探一次，最多 30s），就绪即 `Navigate`；超时则把 splash 文案换成红色「本地服务没有启动」；
+- 实测（150% DPI，本机）：冷启动窗口约 0.29–0.32s、页面可见 0.71–0.84s；热启动窗口 0.13–0.18s、页面 0.56–0.67s。改动前分别是 0.86s / 3.65s。
+
 ## exe 的完整性级别检查
 
 `VPBoardBetter.exe` 用 `asInvoker` 清单，不请求提升。启动时读自身令牌的完整性级别（`GetTokenInformation(TokenIntegrityLevel)`）：
