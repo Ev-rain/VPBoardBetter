@@ -46,7 +46,13 @@ function createNode(tag, attrs, doc) {
     add: function (c) { const l = node.className.split(/\s+/).filter(Boolean); if (l.indexOf(c) < 0) l.push(c); node.attrs.class = l.join(' '); },
     remove: function (c) { node.attrs.class = node.className.split(/\s+/).filter(function (x) { return x && x !== c; }).join(' '); },
     contains: function (c) { return node.className.split(/\s+/).indexOf(c) >= 0; },
-    toggle: function (c) { this.contains(c) ? this.remove(c) : this.add(c); }
+    toggle: function (c, force) {
+      var has = this.contains(c);
+      var want = force === undefined ? !has : !!force;
+      if (want && !has) this.add(c);
+      if (!want && has) this.remove(c);
+      return want;
+    }
   };
   node.appendChild = function (c) { c.parentNode = this; this.children.push(c); return c; };
   node.setAttribute = function (k, v) { this.attrs[k] = String(v); };
@@ -325,10 +331,39 @@ async function testInteraction() {
   ok(!doc.body.classList.contains('framed'), '没有 helper 时不加 framed');
 }
 
+async function testPollRecovery() {
+  console.log('— helper 迟到时的恢复 —');
+  const doc = loadDom(path.join(ROOT, 'index.html'));
+  const ctx = loadApp(doc);
+  const vpApp = ctx.VPApp;
+  const timers = [];
+  ctx.setInterval = function (fn) { timers.push(fn); return timers.length; };
+  let n = 0;
+  ctx.fetch = function () {
+    n++;
+    return Promise.resolve({
+      ok: true,
+      json: function () {
+        return Promise.resolve(n === 1 ? { active: false } : { active: true, maximized: false });
+      }
+    });
+  };
+
+  await vpApp.initFrame();
+  ok(doc.getElementById('titlebar').hidden === true, 'helper 还没起来时先隐藏标题条');
+  ok(timers.length === 1, '即使第一次读不到 helper 也要继续轮询（否则永远等不到）', timers.length);
+
+  timers[0]();
+  await new Promise(function (r) { setTimeout(r, 20); });
+  ok(doc.getElementById('titlebar').hidden === false, 'helper 稍后上线，标题条自动出现');
+  ok(doc.body.classList.contains('framed'), 'helper 上线后 body 加 framed');
+}
+
 async function main() {
   await testProxy();
   testTitlebar();
   await testInteraction();
+  await testPollRecovery();
   console.log(failures === 0 ? '\n全部通过 ✓' : '\n失败 ' + failures + ' 项 ✗');
   process.exit(failures === 0 ? 0 : 1);
 }

@@ -1426,9 +1426,10 @@ function updateStatus() {
     return p.then(function (s) {
       applyFrameState(s);
       bindFrameEvents(send);
-      if (!framePoll && s && s.active && typeof setInterval === 'function') {
+      // helper 由启动器在 Edge 之后拉起，页面可能先加载完；所以要一直轮询到它上线
+      if (!framePoll && typeof setInterval === 'function') {
         framePoll = setInterval(function () {
-          frameState().then(function (x) { if (x && x.active) applyFrameState(x); });
+          frameState().then(function (x) { applyFrameState(x && x.active ? x : { active: false }); });
         }, 800);
       }
       return s;
