@@ -124,7 +124,9 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 标题条左侧图标直接取 exe 内嵌图标（`Icon.ExtractAssociatedIcon`，来自 `tools/launcher/app.ico`，也就是黄色气球）；
 - 标题条文字跟着页面 `document.title` 走：`CoreWebView2.DocumentTitleChanged` 里把 `" · VP Board Better"` 后缀去掉，只留比赛名；还没加载比赛时页面标题是 `VP Board Better · 虚拟榜单`，此时标题条留空；
 - 宿主加载的是 `http://127.0.0.1:8787/?host=1`，页面看到 `host=1` 会给 `<body>` 加 `.hosted`，`.hosted .brand { display: none }` 把页面自己那套品牌栏藏掉——标题条上已经有一个气球，页面里就不该再有第二个；
-- 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
+- 窗口大小/位置/最大化状态写 `_window.json`：`FormClosing` 里先存再置 `_closing`（先置标志会被 `SaveState()` 自己的早退挡掉），拖拽/缩放后再有 700ms 防抖兜底；
+- 最小化时 `Bounds` 是 `-32000`，保存改取 `RestoreBounds`，所以「最小化后直接在任务栏右键关闭」也能记住还原尺寸；
+- 只允许开一个实例：`Local\VPBoardBetter.SingleInstance` 互斥量，第二次双击把已有窗口 `ShowWindow(SW_RESTORE)` + 置前就退出，避免两个窗口先后关闭时互相覆盖 `_window.json`；
 - 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；
 - 降级：WebView2 起不来时自动退回 `msedge --app=…` 窗口（老路径），只是没有自绘标题条与启动骨架屏；

@@ -49,6 +49,7 @@ static class Host
     static readonly string StatePath = Path.Combine(Root, "_window.json");
 
     static Process _server;
+    static System.Threading.Mutex _single;
     public static bool Fallback;
 
     static readonly object LogLock = new object();
@@ -72,6 +73,10 @@ static class Host
 
         if (stop) { StopEverything(); return; }
 
+        bool fresh;
+        _single = new System.Threading.Mutex(true, "Local\\VPBoardBetter.SingleInstance", out fresh);
+        if (!fresh && ActivateExisting()) { Log("已有窗口，切到前台后退出"); return; }
+
         Application.ThreadException += delegate(object s2, System.Threading.ThreadExceptionEventArgs e2) { Log("thread exception: " + e2.Exception); };
         AppDomain.CurrentDomain.UnhandledException += delegate(object s2, UnhandledExceptionEventArgs e2) { Log("unhandled: " + e2.ExceptionObject); };
         Application.EnableVisualStyles();
@@ -86,6 +91,31 @@ static class Host
 
         Log("window closed");
         if (!Fallback) StopEverything();
+    }
+
+    static bool ActivateExisting()
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h, IntPtr p2)
+        {
+            if (!IsWindowVisible(h)) return true;
+            uint pid;
+            GetWindowThreadProcessId(h, out pid);
+            try
+            {
+                Process pr = Process.GetProcessById((int)pid);
+                if (!string.Equals(pr.ProcessName, "VPBoardBetter", StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            catch { return true; }
+            if (GetWindow(h, GW_OWNER) != IntPtr.Zero) return true;
+            found = h;
+            return false;
+        }, IntPtr.Zero);
+
+        if (found == IntPtr.Zero) return false;
+        ShowWindow(found, 9);
+        SetForegroundWindow(found);
+        return true;
     }
 
     static bool Has(string[] args, string flag)
@@ -683,7 +713,7 @@ static class Host
 
         void SaveState()
         {
-            if (WindowState == FormWindowState.Minimized) return;
+            // 最小化时 Bounds 无意义（-32000），改用 RestoreBounds 记它还原后的样子
             Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
             if (b.Width < 400 || b.Height < 300) return;
             _state.w = b.Width;
@@ -944,4 +974,18 @@ static class Host
     static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
     static extern uint GetDoubleClickTime();
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumProc cb, IntPtr p);
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")]
+    static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr h, uint cmd);
+    delegate bool EnumProc(IntPtr h, IntPtr p);
+    const uint GW_OWNER = 4;
 }
