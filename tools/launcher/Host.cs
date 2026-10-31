@@ -436,17 +436,36 @@ static class Host
         const int BAR_H = 48;
         const int BTN_H = 46;
 
+        static bool OnScreen(Rectangle r)
+        {
+            foreach (Screen s in Screen.AllScreens)
+            {
+                Rectangle hit = Rectangle.Intersect(s.WorkingArea, r);
+                if (hit.Width >= 240 && hit.Height >= 160) return true;
+            }
+            return false;
+        }
+
         public Frame()
         {
             _state = WinState.Load();
 
             Text = "VP Board Better";
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
+            catch { }
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
             BackColor = Color.FromArgb(10, 14, 19);
             MinimumSize = new Size(900, 600);
             Size = new Size(_state.w, _state.h);
             Location = new Point(_state.x, _state.y);
+            if (!OnScreen(Bounds))
+            {
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+                Size = new Size(Math.Min(1280, wa.Width - 80), Math.Min(820, wa.Height - 80));
+                Location = new Point(wa.X + (wa.Width - Width) / 2, wa.Y + (wa.Height - Height) / 2);
+            }
+            if (_state.max) WindowState = FormWindowState.Maximized;
             KeyPreview = false;
 
             _bar = new Panel();
@@ -676,8 +695,9 @@ static class Host
 
         void SaveState()
         {
-            if (_closing) return;
-            Rectangle b = WindowState == FormWindowState.Maximized ? RestoreBounds : Bounds;
+            if (WindowState == FormWindowState.Minimized) return;
+            Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            if (b.Width < 400 || b.Height < 300) return;
             _state.w = b.Width;
             _state.h = b.Height;
             _state.x = b.X;
@@ -813,8 +833,8 @@ static class Host
         void OnClosing(object s, FormClosingEventArgs e)
         {
             if (_closing) return;
-            _closing = true;
             SaveState();
+            _closing = true;
             Host.Log("closing, saving state");
             try { if (_view != null) { _body.Controls.Remove(_view); _view.Dispose(); } } catch { }
             if (_selfTest) Environment.ExitCode = _testFailed ? 1 : 0;
