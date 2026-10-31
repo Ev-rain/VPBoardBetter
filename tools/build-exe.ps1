@@ -34,7 +34,7 @@ foreach ($dll in @($core, $forms, $loader)) {
   Copy-Item $dll (Join-Path $root (Split-Path $dll -Leaf)) -Force
 }
 
-$cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/platform:anycpu',
+$cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/platform:x64',
   '/r:System.dll', '/r:System.Core.dll', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Management.dll',
   ('/r:' + $core), ('/r:' + $forms),
   ('/out:' + $out), $src)

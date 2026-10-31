@@ -57,6 +57,8 @@ static class Host
 
         if (stop) { StopEverything(); return; }
 
+        Application.ThreadException += delegate(object s2, System.Threading.ThreadExceptionEventArgs e2) { Log("thread exception: " + e2.Exception); };
+        AppDomain.CurrentDomain.UnhandledException += delegate(object s2, UnhandledExceptionEventArgs e2) { Log("unhandled: " + e2.ExceptionObject); };
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
 
@@ -72,7 +74,7 @@ static class Host
         }
 
         var f = new Frame();
-        f.Load += delegate { f.StartBrowser(self); };
+        f.Shown += delegate { f.StartBrowser(self); };
         Application.Run(f);
 
         Log("window closed");
@@ -487,23 +489,51 @@ static class Host
             string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VPBoardBetter", "wv2");
             try { Directory.CreateDirectory(data); } catch { }
             _view.CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = data };
-            _body.Controls.Add(_view);
-
             _view.CoreWebView2InitializationCompleted += OnBrowserInit;
-
-            if (selfTest)
+            Host.Log("adding WebView2 control");
+            try { _body.Controls.Add(_view); } catch (Exception ex) { Host.Log("add failed: " + ex); }
+            var probe = new System.Windows.Forms.Timer();
+            probe.Interval = 4000;
+            probe.Tick += delegate
             {
-                var t = new System.Windows.Forms.Timer();
-                t.Interval = 15000;
-                t.Tick += delegate
+                probe.Stop();
+                Host.Log("probe core=" + (_view.CoreWebView2 == null ? "null" : "ok") + " ready=" + _browserReady);
+            };
+            probe.Start();
+
+
+            var guard = new System.Windows.Forms.Timer();
+            guard.Interval = 12000;
+            guard.Tick += delegate
+            {
+                guard.Stop();
+                if (_browserReady) return;
+                Host.Log("browser not ready after 12s, fallback");
+                if (selfTest) { _testFailed = true; Close(); return; }
+                Host.Fallback = true;
+                Host.LaunchEdgeFallback();
+                Close();
+            };
+            guard.Start();
+            var ensure = new System.Windows.Forms.Timer();
+            ensure.Interval = 2500;
+            ensure.Tick += delegate
+            {
+                ensure.Stop();
+                Host.Log("explicit ensure, body=" + _body.ClientSize.Width + "x" + _body.ClientSize.Height);
+                if (_view.CoreWebView2 != null) return;
+                try
                 {
-                    t.Stop();
-                    Host.Log("selftest timeout browserReady=" + _browserReady);
-                    _testFailed = !_browserReady;
-                    Close();
-                };
-                t.Start();
-            }
+                    System.Threading.Tasks.Task t2 = _view.EnsureCoreWebView2Async(null);
+                    t2.ContinueWith(delegate(System.Threading.Tasks.Task tt)
+                    {
+                        string msg = tt.IsFaulted ? (tt.Exception == null ? "faulted" : tt.Exception.GetBaseException().Message) : "ok";
+                        Host.Log("ensure result: " + msg);
+                    });
+                }
+                catch (Exception ex) { Host.Log("ensure threw: " + ex.Message); }
+            };
+            ensure.Start();
         }
 
         void OnBrowserInit(object s, CoreWebView2InitializationCompletedEventArgs e)
