@@ -15,21 +15,19 @@ assets/app.js         界面、播放时钟、渲染、抽屉、弹窗
 server.js             零依赖本地服务：静态托管（gzip/ETag/304）+ /api/health + /api/proxy
                       + /api/boards + /api/window + /api/open + /api/qoj/*
 qoj-cdp.js            QOJ 浏览器驱动（临时 Edge + DevTools 协议，登录态存 qoj-session.json）
-start.bat             隐藏启动本地服务 + Edge 应用窗口（不留 cmd 窗口）
-stop.bat              关闭本地服务
-launch.vbs            隐藏启动的桥（wscript 调 PowerShell，纯 ASCII）
-VPBoardBetter.exe     图形启动器：asInvoker（不需管理员），检测 Low IL 后给提示；正常时转给 start.bat
-tools/launcher/       exe 源码（Program.cs）、图标与清单，用 tools/build-exe.ps1 重新生成
-tools/launch-hidden.ps1  真正干活的部分：识别旧版本服务 → 等端口就绪 → 按 _window.json 开 Edge 窗口
-tools/stop-server.ps1    结束占用端口的进程
-tools/prune-profile.ps1  清理 `.app-profile` 里可再生的浏览器缓存（启动前调用）
+start.bat             启动 VPBoardBetter.exe 的薄壳（4 行，可以直接双击 exe 代替）
+stop.bat              关闭本地服务（命令行排障用）
+VPBoardBetter.exe     自绘窗口宿主：起服务 → WebView2 装页面 → 关窗退服务（asInvoker，含 Low IL 提示）
+tools/launcher/       exe 源码（Host.cs）、图标与清单，用 tools/build-exe.ps1 重新生成
+tools/stop-server.ps1    结束占用 8787 的进程
+tools/prune-profile.ps1  清理 `.app-profile` 里可再生的浏览器缓存（旧 Edge 窗口路径用）
 tools/kill-qoj-browser.ps1 兜底：结束 QOJ 用的后台 Edge
-tools/build-exe.ps1      渲染图标 → 生成 ico → csc 编译 exe（需要 .NET Framework 的 csc.exe）
+tools/build-exe.ps1      找 WebView2 SDK 三个 DLL → csc 编译 exe（x64）
 tools/test-core.js       核心算法自测（node tools/test-core.js）
+tools/test-curve.js      时间曲线 SVG 自测（Node + 最小 DOM 桩）
+tools/test-ui.js         页面/服务结构自检（`?host=1`、静态资源、已移除的旧接口）
 tools/hide-edge-window.ps1 把 QOJ 用的 Edge 窗口 SW_HIDE（连任务栏按钮一起去掉）
 tools/collect.js         抓取 xcpcio.github.io 数据的小工具（无头浏览器）
-tools/uicheck.ps1        无头浏览器截图自检
-tools/shot.ps1           单张截图
 fixtures/                真实比赛数据样例（2025 ICPC 南京站，359 队 / 4075 提交）
 ```
 
@@ -128,7 +126,8 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
 - 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；
-- 降级：WebView2 起不来时自动退回 `msedge --app=…` 窗口（老路径），只是没有自绘标题条。
+- 降级：WebView2 起不来时自动退回 `msedge --app=…` 窗口（老路径），只是没有自绘标题条与启动骨架屏；
+- 旧方案（`-frame` helper 去掉 `WS_CAPTION` + 页面自绘 34px 标题条 + `/api/frame/*` 代理）已整体删除，Chromium 会把 `WS_CAPTION` 加回来，那条路走不通。
 
 ## 启动流程与耗时
 
@@ -150,6 +149,6 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 ```
 node tools/test-core.js        # 核心算法（359 队/4075 提交，时间映射、封榜不泄露、奖牌线）
 node tools/test-curve.js       # 帮助里的时间曲线（Node + 最小 DOM 桩，检查生成的 SVG）
+node tools/test-ui.js          # 页面结构与服务接口（`?host=1`、`/api/health`、旧 `/api/frame/*` 应 404）
 node --check assets/app.js     # 语法
-tools/shot.ps1                 # 无头 Edge 截图（需要本地服务在跑）
 ```

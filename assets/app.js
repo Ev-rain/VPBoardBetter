@@ -1377,70 +1377,8 @@ function updateStatus() {
     els.tickLabels.innerHTML = marks.map(function (m) { return '<span>' + VP.fmtClock(m).slice(0, 5) + '</span>'; }).join('');
   }
 
-  /* ---------------- 自绘标题栏 ---------------- */
-  var frameBound = false;
-  var framePoll = null;
-
-  function frameState() {
-    return fetch('/api/frame/state').then(function (r) { return r.json(); })
-      .catch(function () { return { active: false }; });
-  }
-  function frameCmd(cmd) {
-    return fetch('/api/frame/' + cmd, { method: 'POST' }).then(function (r) { return r.ok; })
-      .catch(function () { return false; });
-  }
-  function applyFrameState(s) {
-    var bar = document.getElementById('titlebar');
-    var maxBtn = document.getElementById('tbMax');
-    var active = !!(s && s.active);
-    document.body.classList.toggle('framed', active);
-    if (bar) bar.hidden = !active;
-    document.documentElement.dataset.framed = active ? '1' : '0';
-    if (maxBtn) maxBtn.textContent = s && s.maximized ? '❐' : '□';
-  }
-  function bindFrameEvents(send) {
-    if (frameBound) return;
-    frameBound = true;
-    var bar = document.getElementById('titlebar');
-    if (bar) {
-      bar.addEventListener('mousedown', function (e) {
-        if (e.button !== 0) return;
-        if (e.target && e.target.closest && e.target.closest('button')) return;
-        send('drag');
-      });
-    }
-    ['tbMin', 'tbMax', 'tbClose'].forEach(function (id) {
-      var b = document.getElementById(id);
-      if (!b) return;
-      var cmd = id === 'tbMin' ? 'min' : (id === 'tbMax' ? 'max' : 'close');
-      b.addEventListener('mousedown', function (e) {
-        e.stopPropagation();
-        send(cmd);
-      });
-    });
-  }
-  function initFrame(opts) {
-    opts = opts || {};
-    var send = opts.cmd || frameCmd;
-    var p = opts.state ? Promise.resolve(opts.state) : frameState();
-    return p.then(function (s) {
-      applyFrameState(s);
-      bindFrameEvents(send);
-      // helper 由启动器在 Edge 之后拉起，页面可能先加载完；所以要一直轮询到它上线
-      if (!framePoll && typeof setInterval === 'function') {
-        framePoll = setInterval(function () {
-          frameState().then(function (x) { applyFrameState(x && x.active ? x : { active: false }); });
-        }, 800);
-      }
-      return s;
-    }).catch(function () {
-      applyFrameState({ active: false });
-    });
-  }
-
   function init() {
     cacheEls();
-    initFrame();
     var prefs = loadPrefs();
 
     var qs = null;
@@ -2289,8 +2227,5 @@ window.VPApp = {
     applyPayload: applyPayload,
     loadQoj: loadQoj,
     renderTimeCurve: renderTimeCurve,
-    initFrame: initFrame,
-    frameCmd: frameCmd,
-    frameState: frameState
   };
 })();

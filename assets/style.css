@@ -78,46 +78,6 @@ code {
   min-height: 0;
 }
 
-/* ---------------- 自绘标题栏（helper 去掉系统 caption 后才显示） ---------------- */
-.titlebar {
-  display: none;
-  height: 34px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0 0 12px;
-  background: linear-gradient(180deg, var(--panel-2), var(--panel));
-  border-bottom: 1px solid var(--border-soft);
-  user-select: none;
-  -webkit-app-region: no-drag;
-}
-body.framed .titlebar { display: flex; }
-body.framed .app { grid-template-rows: 34px auto auto auto 1fr auto; }
-.tb-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-dim);
-  letter-spacing: 0.2px;
-}
-.tb-title img { width: 16px; height: 16px; }
-.tb-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tb-btns { display: flex; height: 34px; }
-.tb-btn {
-  width: 46px;
-  height: 34px;
-  border: 0;
-  background: transparent;
-  color: var(--text-dim);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-.tb-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
-.tb-close:hover { background: #e81123; color: #fff; }
-
 /* ---------------- topbar ---------------- */
 .topbar {
   position: relative;

@@ -196,32 +196,6 @@ function openInBrowser(url) {
   }
 }
 
-/* 自绘标题栏：helper（VPBoardBetter.exe -frame）在 127.0.0.1:8790 上提供窗口命令，
-   端口由它写进 _frame.json；页面通过同源 /api/frame/* 调这里代理，避免跨域。 */
-const FRAME_PORT = Number(process.env.FRAME_PORT || 8790);
-function frameBase() {
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(ROOT, '_frame.json'), 'utf8'));
-    if (j && j.port) return 'http://127.0.0.1:' + j.port;
-  } catch (e) { }
-  return 'http://127.0.0.1:' + FRAME_PORT;
-}
-async function frameCall(cmd) {
-  const isState = cmd === 'state';
-  try {
-    const r = await fetch(frameBase() + '/' + cmd, {
-      method: isState ? 'GET' : 'POST',
-      signal: AbortSignal.timeout(2000)
-    });
-    if (!r.ok) return null;
-    if (!isState) return { ok: true };
-    const j = await r.json().catch(function () { return null; });
-    return j || null;
-  } catch (e) {
-    return null;
-  }
-}
-
 function sendJson(res, code, obj, cache) {
   const body = JSON.stringify(obj);
   const headers = {
@@ -361,26 +335,6 @@ const server = http.createServer(async (req, res) => {
       if (!allowed) return sendJson(res, 403, { ok: false, error: '只允许打开 QOJ 的链接' });
       openInBrowser(t.href);
       return sendJson(res, 200, { ok: true, url: t.href });
-    }
-
-    if (u.pathname === '/api/frame/state') {
-      const s = await frameCall('state');
-      return sendJson(res, 200, s
-        ? { ok: true, active: true, maximized: !!s.maximized }
-        : { ok: true, active: false });
-    }
-
-    if (u.pathname.indexOf('/api/frame/') === 0) {
-      const cmd = u.pathname.slice('/api/frame/'.length);
-      if (['drag', 'min', 'max', 'close'].indexOf(cmd) < 0) {
-        return sendJson(res, 400, { ok: false, error: 'unknown frame command' });
-      }
-      if (req.method !== 'POST') {
-        return sendJson(res, 405, { ok: false, error: 'method not allowed' });
-      }
-      const r = await frameCall(cmd);
-      if (!r) return sendJson(res, 502, { ok: false, error: '没有自绘窗口' });
-      return sendJson(res, 200, { ok: true });
     }
 
     if (u.pathname === '/api/boards') {
