@@ -15,12 +15,12 @@ assets/app.js         界面、播放时钟、渲染、抽屉、弹窗
 server.js             零依赖本地服务：静态托管（gzip/ETag/304）+ /api/health + /api/proxy
                       + /api/boards + /api/window + /api/open + /api/qoj/*
 qoj-cdp.js            QOJ 浏览器驱动（临时 Edge + DevTools 协议，登录态存 qoj-session.json）
-start.bat             启动 VPBoardBetter.exe 的薄壳（4 行，可以直接双击 exe 代替）
-stop.bat              关闭本地服务（命令行排障用）
+stop.bat              兜底：exe 异常退出后 node 会占着 8787，用这个按端口收掉
 VPBoardBetter.exe     自绘窗口宿主：起服务 → WebView2 装页面 → 关窗退服务（asInvoker，含 Low IL 提示）
 tools/launcher/       exe 源码（Host.cs）、图标与清单，用 tools/build-exe.ps1 重新生成
+                      （app.ico 是内嵌图标，Host.cs 直接 ExtractAssociatedIcon 取它）
 tools/stop-server.ps1    结束占用 8787 的进程
-tools/prune-profile.ps1  清理 `.app-profile` 里可再生的浏览器缓存（旧 Edge 窗口路径用）
+tools/prune-profile.ps1  清理 `.app-profile` 里可再生的浏览器缓存（WebView2 失败、退回 Edge 窗口时调用）
 tools/kill-qoj-browser.ps1 兜底：结束 QOJ 用的后台 Edge
 tools/build-exe.ps1      找 WebView2 SDK 三个 DLL → csc 编译 exe（x64）
 tools/test-core.js       核心算法自测（node tools/test-core.js）
@@ -29,6 +29,7 @@ tools/test-ui.js         页面/服务结构自检（`?host=1`、静态资源、
 tools/hide-edge-window.ps1 把 QOJ 用的 Edge 窗口 SW_HIDE（连任务栏按钮一起去掉）
 tools/collect.js         抓取 xcpcio.github.io 数据的小工具（无头浏览器）
 fixtures/                真实比赛数据样例（2025 ICPC 南京站，359 队 / 4075 提交）
+docs/releases/           每个版本的发布说明（发版前先写在这里给作者过目）
 ```
 
 ## 数据格式

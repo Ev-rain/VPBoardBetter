@@ -164,7 +164,7 @@
     }
 
     var msg = '加载失败：\n' + errors.map(function (s) { return '· ' + s; }).join('\n');
-    if (!info.available) msg += '\n提示：用 start.bat 打开后可以走本地服务重试。';
+    if (!info.available) msg += '\n提示：用 VPBoardBetter.exe 打开后可以走本地服务重试。';
     throw new Error(msg);
   }
 

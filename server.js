@@ -22,7 +22,8 @@ const { execFile } = require('child_process');
 const { URL } = require('url');
 
 const ROOT = __dirname;
-const BUILD = '2026-10-29';
+const VERSION = '1.1.0';
+const BUILD = '2026-11-01';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = '127.0.0.1';
 const PROXY_HOSTS = new Set(['board.xcpcio.com', 'xcpcio.github.io']);
@@ -287,6 +288,7 @@ const server = http.createServer(async (req, res) => {
         app: 'vp-board-better',
         qoj: true,
         port: PORT,
+        version: VERSION,
         build: BUILD,
         features: ['boards', 'editorial', 'open', 'window']
       });

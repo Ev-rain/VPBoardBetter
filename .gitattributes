@@ -5,7 +5,6 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
-*.vbs text eol=crlf
 
 # 二进制
 *.exe binary

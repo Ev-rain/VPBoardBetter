@@ -356,7 +356,7 @@
 
   var lastWinSent = '';
 
-/* 记住窗口大小：把当前外框尺寸报给本地服务，下次 start.bat 用它开窗 */
+/* 记住窗口大小：把当前外框尺寸报给本地服务，下次启动按它开窗 */
 function reportWindowSize() {
   if (!state.qoj.available) return;
   var w = Math.round(window.outerWidth || 0);
@@ -1415,6 +1415,10 @@ function updateStatus() {
     // 检查本地启动器
     Data.checkServer().then(function (info) {
       state.qoj.available = !!info.available;
+      var verEl = document.getElementById('appVersion');
+      if (verEl) {
+        verEl.textContent = '版本 ' + (info.version || '—') + (info.build ? ' · 本地服务 ' + info.build : '');
+      }
       if (info.available && !state.qojStaleNotified) {
         var feats = info.features || [];
         if (feats.indexOf('editorial') < 0) {
@@ -1887,7 +1891,7 @@ function updateStatus() {
   }
 
   async function searchQojForContest() {
-    if (!state.qoj.available) { toast('需要本地服务，请用 start.bat 打开', 'err'); return; }
+    if (!state.qoj.available) { toast('需要本地服务，请从 VPBoardBetter.exe 打开', 'err'); return; }
     var q = qojQueryForContest();
     var startMs = state.dataset && state.dataset.contest && state.dataset.contest.startMs;
     var date = startMs ? qojDateOf(startMs) : '';
@@ -2152,7 +2156,7 @@ function updateStatus() {
   }
 
   async function doQojSubmit() {
-    if (!state.qoj.available) { toast('需要本地服务，请用 start.bat 打开', 'err'); return; }
+    if (!state.qoj.available) { toast('需要本地服务，请从 VPBoardBetter.exe 打开', 'err'); return; }
     if (!state.qoj.loggedIn) { toast('先登录 QOJ（账号与映射页）', 'err'); return; }
     var c = qojContest();
     if (!c.url) { toast('先在「比赛」那一行关联这场比赛的 QOJ 链接', 'err'); return; }

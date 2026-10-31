@@ -200,6 +200,20 @@ static class Host
             }
             if (edge == null) { MessageBox.Show("找不到 Edge，也没有可用的 WebView2 运行时。", "VP Board Better"); return; }
             var st = WinState.Load();
+            try
+            {
+                string prune = Path.Combine(Root, "tools", "prune-profile.ps1");
+                if (File.Exists(prune))
+                {
+                    var pp = new ProcessStartInfo("powershell.exe",
+                        "-NoProfile -ExecutionPolicy Bypass -File " + Quote(prune) + " -Profile " + Quote(Path.Combine(Root, ".app-profile")));
+                    pp.UseShellExecute = false;
+                    pp.CreateNoWindow = true;
+                    Process.Start(pp);
+                    Log("已清理 .app-profile 缓存");
+                }
+            }
+            catch (Exception ex2) { Log("清理缓存失败: " + ex2.Message); }
             string args = "--app=http://127.0.0.1:" + PORT + "/ --window-size=" + st.w + "," + st.h +
                 " --window-position=" + st.x + "," + st.y +
                 " --user-data-dir=" + Quote(Path.Combine(Root, ".app-profile")) +

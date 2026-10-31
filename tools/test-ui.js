@@ -61,7 +61,7 @@ function get(port, p) {
     let j = {};
     try { j = JSON.parse(health.body); } catch (e) { }
     ok('health.features 不含 frame', Array.isArray(j.features) && j.features.indexOf('frame') < 0);
-    ok('health 带 build 与 qoj 字段', !!j.build && j.qoj === true);
+    ok('health 带 version/build/qoj', /^[0-9]+\.[0-9]+\.[0-9]+$/.test(String(j.version)) && !!j.build && j.qoj === true);
   }
   const frame = await get(port, '/api/frame/state');
   ok('旧 /api/frame/state 已 404', frame.status === 404, 'status=' + frame.status);
