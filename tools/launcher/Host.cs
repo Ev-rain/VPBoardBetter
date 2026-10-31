@@ -317,7 +317,7 @@ static class Host
     public class Frame : Form
     {
         Panel _bar, _body;
-        Label _title;
+        Label _title, _splash;
         Button _min, _max, _close;
         WebView2 _view;
         System.Windows.Forms.Timer _saveTimer;
@@ -342,7 +342,6 @@ static class Host
             KeyPreview = false;
 
             _bar = new Panel();
-            _bar.Dock = DockStyle.Top;
             _bar.Height = 36;
             _bar.BackColor = Color.FromArgb(22, 25, 30);
             _bar.Paint += PaintBar;
@@ -385,11 +384,11 @@ static class Host
             _bar.Controls.Add(_max);
             _bar.Controls.Add(_close);
             _body = new Panel();
-            _body.Dock = DockStyle.Fill;
             _body.BackColor = Color.FromArgb(16, 18, 22);
             Controls.Add(_body);
             Controls.Add(_bar);
             _bar.BringToFront();
+            LayoutParts();
 
             _saveTimer = new System.Windows.Forms.Timer();
             _saveTimer.Interval = 700;
@@ -397,7 +396,7 @@ static class Host
 
             ResizeEnd += delegate { QueueSave(); };
             Move += delegate { QueueSave(); };
-            Resize += delegate { LayoutButtons(); };
+            Resize += delegate { LayoutParts(); };
             FormClosing += OnClosing;
         }
 
@@ -426,6 +425,15 @@ static class Host
             b.Font = new Font("Segoe UI", 9f, FontStyle.Regular);
             b.Click += onClick;
             return b;
+        }
+
+        void LayoutParts()
+        {
+            if (_bar == null || _body == null) return;
+            int barH = _bar.Height;
+            _bar.SetBounds(0, 0, ClientSize.Width, barH);
+            _body.SetBounds(0, barH, ClientSize.Width, Math.Max(0, ClientSize.Height - barH));
+            LayoutButtons();
         }
 
         void LayoutButtons()
@@ -492,6 +500,15 @@ static class Host
             _view.CoreWebView2InitializationCompleted += OnBrowserInit;
             Host.Log("adding WebView2 control");
             try { _body.Controls.Add(_view); } catch (Exception ex) { Host.Log("add failed: " + ex); }
+            _splash = new Label();
+            _splash.Text = "正在启动…";
+            _splash.Dock = DockStyle.Fill;
+            _splash.TextAlign = ContentAlignment.MiddleCenter;
+            _splash.BackColor = Color.FromArgb(16, 18, 22);
+            _splash.ForeColor = Color.FromArgb(130, 142, 158);
+            _splash.Font = new Font("Segoe UI", 10f, FontStyle.Regular);
+            _body.Controls.Add(_splash);
+            _splash.BringToFront();
             var probe = new System.Windows.Forms.Timer();
             probe.Interval = 4000;
             probe.Tick += delegate
@@ -543,6 +560,7 @@ static class Host
             {
                 if (_selfTest) { _testFailed = true; Close(); return; }
                 Host.Log("WebView2 不可用，改用 Edge 窗口打开");
+                if (_splash != null) _splash.Visible = false;
                 Host.Fallback = true;
                 Host.LaunchEdgeFallback();
                 Close();
@@ -556,6 +574,7 @@ static class Host
                 _view.CoreWebView2.NavigationCompleted += delegate(object s2, CoreWebView2NavigationCompletedEventArgs e2)
                 {
                     Host.Log("nav ok=" + e2.IsSuccess + " url=" + _view.Source);
+                if (_splash != null) _splash.Visible = false;
                     if (_selfTest) { _testFailed = false; var t = new System.Windows.Forms.Timer(); t.Interval = 1200; t.Tick += delegate { t.Stop(); Close(); }; t.Start(); }
                 };
                 _view.CoreWebView2.Navigate("http://127.0.0.1:" + PORT + "/");
@@ -575,6 +594,7 @@ static class Host
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
             {
                 base.WndProc(ref m);
