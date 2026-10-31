@@ -22,7 +22,7 @@ const { execFile } = require('child_process');
 const { URL } = require('url');
 
 const ROOT = __dirname;
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const BUILD = '2026-11-01';
 const PORT = Number(process.env.PORT || 8787);
 const HOST = '127.0.0.1';

@@ -82,4 +82,4 @@
 
 榜单数据来自 [XCPCIO board](https://board.xcpcio.com) 与 [xcpcio/board-data](https://github.com/xcpcio/board-data)；示例数据是 2025 ICPC 南京站（359 队 / 4075 次提交）。
 
-[MIT](LICENSE) · 版本记录：[v1.1.0](docs/releases/v1.1.0.md) · 开发与实现细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+[MIT](LICENSE) · 版本记录：[v1.1.1](docs/releases/v1.1.1.md) · 开发与实现细节见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
