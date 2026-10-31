@@ -31,7 +31,7 @@ static class Host
     const int WM_NCHITTEST = 0x0084;
 
     [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
-    [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins m);
+    [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     static readonly string LogPath = Path.Combine(Root, "_host.log");
@@ -410,9 +410,13 @@ static class Host
             base.OnHandleCreated(e);
             try
             {
-                var m = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-                int hr = DwmExtendFrameIntoClientArea(Handle, ref m);
-                Host.Log("dwm extend frame hr=" + hr);
+                int noBorder = unchecked((int)0xFFFFFFFE);
+                int round = 2;
+                int dark = 1;
+                int hr1 = DwmSetWindowAttribute(Handle, 34, ref noBorder, 4);
+                int hr2 = DwmSetWindowAttribute(Handle, 33, ref round, 4);
+                int hr3 = DwmSetWindowAttribute(Handle, 20, ref dark, 4);
+                Host.Log("dwm border=" + hr1 + " corner=" + hr2 + " dark=" + hr3);
             }
             catch (Exception ex) { Host.Log("dwm failed: " + ex.Message); }
         }
@@ -448,11 +452,8 @@ static class Host
         {
             if (_bar == null || _body == null) return;
             int barH = _bar.Height;
-            int g = GRIP;
-            int w = Math.Max(0, ClientSize.Width - g * 2);
-            int h = Math.Max(0, ClientSize.Height - g * 2);
-            _bar.SetBounds(g, g, w, barH);
-            _body.SetBounds(g, g + barH, w, Math.Max(0, h - barH));
+            _bar.SetBounds(0, 0, ClientSize.Width, barH);
+            _body.SetBounds(0, barH, ClientSize.Width, Math.Max(0, ClientSize.Height - barH));
             LayoutButtons();
         }
 
@@ -614,7 +615,6 @@ static class Host
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
             {
                 {
