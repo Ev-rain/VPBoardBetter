@@ -446,8 +446,8 @@ static class Host
             _title.AutoEllipsis = true;
             _title.ForeColor = Color.FromArgb(226, 232, 240);
             _title.BackColor = Color.Transparent;
-            _title.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-            _title.SetBounds(44, 0, 400, BAR_H);
+            _title.Font = new Font("Segoe UI Semibold", 11f, FontStyle.Regular);
+            _title.SetBounds(52, 0, 400, BAR_H - 2);
             _title.TextAlign = ContentAlignment.MiddleLeft;
             _title.MouseDown += delegate(object s, MouseEventArgs e)
             {
@@ -598,6 +598,12 @@ static class Host
             _bar.SetBounds(0, 0, ClientSize.Width, barH);
             _body.SetBounds(GRIP, barH, Math.Max(0, ClientSize.Width - GRIP * 2), Math.Max(0, ClientSize.Height - barH - GRIP));
             LayoutButtons();
+            if (_title != null)
+            {
+                int left = 52;
+                int right = Math.Max(left + 120, _bar.ClientSize.Width - 138 - 16);
+                _title.SetBounds(left, 0, right - left, Math.Max(20, barH - 2));
+            }
             UpdateMaxGlyph();
         }
 
