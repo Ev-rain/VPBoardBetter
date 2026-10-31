@@ -333,8 +333,8 @@ static class Host
         bool _testFailed;
         int _resizeBorder = 6;
         const int GRIP = 5;
-        const int BAR_H = 42;
-        const int BTN_H = 40;
+        const int BAR_H = 48;
+        const int BTN_H = 46;
 
         public Frame()
         {
@@ -552,7 +552,7 @@ static class Host
             try
             {
                 if (_barIcon == null) _barIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-                if (_barIcon != null) g.DrawIcon(_barIcon, new Rectangle(12, (r.Height - 22) / 2, 22, 22));
+                if (_barIcon != null) g.DrawIcon(_barIcon, new Rectangle(14, (r.Height - 26) / 2, 26, 26));
             }
             catch { }
         }
