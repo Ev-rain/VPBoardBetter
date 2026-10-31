@@ -113,6 +113,9 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 启动时若 8787 没有监听，就先隐藏启动 `node server.js` 并等它就绪；
 - 页面仍由本地服务提供，WebView2 载入 `http://127.0.0.1:8787/`；
 - 标题条拖动走 `WM_NCLBUTTONDOWN(HTCAPTION)`，边缘命中测试返回 `HTLEFT` 等，所以贴边吸附、双击最大化、边缘缩放仍然是系统的；
+- 无边框照微软 custom frame 文档：`WM_NCCALCSIZE` 返回 0 去掉非客户区，再 `DwmExtendFrameIntoClientArea(-1,-1,-1,-1)` 让 DWM 继续给阴影与圆角（<https://learn.microsoft.com/en-us/windows/win32/dwm/customframe>）；
+- 四周留 5px 抓取带（`GRIP`，标题条与页面各内缩 5px）：WebView2 是子窗口、会盖住客户区边缘，鼠标落在子窗口上时顶层窗口收不到 `WM_NCHITTEST`，边缘就没法缩放；把这 5px 留给窗口背景，命中测试才拿得到；
+- 命中测试用 `WM_NCHITTEST` 的 `lParam` 屏幕坐标换算，不用 `Cursor.Position`（异步消息到达时鼠标可能已移开）；
 - 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
 - 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；

@@ -19,7 +19,6 @@ static class Host
 {
     const int PORT = 8787;
     const int WM_NCLBUTTONDOWN = 0x00A1;
-    const int WM_NCHITTEST = 0x0084;
     const int HTCAPTION = 2;
     const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14,
               HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
@@ -28,6 +27,11 @@ static class Host
     const int WS_MAXIMIZEBOX = 0x00010000;
     const int WS_SYSMENU = 0x00080000;
     const int WS_CAPTION = 0x00C00000;
+    const int WM_NCCALCSIZE = 0x0083;
+    const int WM_NCHITTEST = 0x0084;
+
+    [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
+    [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins m);
 
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     static readonly string LogPath = Path.Combine(Root, "_host.log");
@@ -327,6 +331,7 @@ static class Host
         bool _selfTest;
         bool _testFailed;
         int _resizeBorder = 6;
+        const int GRIP = 5;
 
         public Frame()
         {
@@ -400,6 +405,18 @@ static class Host
             FormClosing += OnClosing;
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try
+            {
+                var m = new Margins { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+                int hr = DwmExtendFrameIntoClientArea(Handle, ref m);
+                Host.Log("dwm extend frame hr=" + hr);
+            }
+            catch (Exception ex) { Host.Log("dwm failed: " + ex.Message); }
+        }
+
         protected override CreateParams CreateParams
         {
             get
@@ -431,8 +448,11 @@ static class Host
         {
             if (_bar == null || _body == null) return;
             int barH = _bar.Height;
-            _bar.SetBounds(0, 0, ClientSize.Width, barH);
-            _body.SetBounds(0, barH, ClientSize.Width, Math.Max(0, ClientSize.Height - barH));
+            int g = GRIP;
+            int w = Math.Max(0, ClientSize.Width - g * 2);
+            int h = Math.Max(0, ClientSize.Height - g * 2);
+            _bar.SetBounds(g, g, w, barH);
+            _body.SetBounds(g, g + barH, w, Math.Max(0, h - barH));
             LayoutButtons();
         }
 
@@ -594,16 +614,16 @@ static class Host
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == 0x0083 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
+            if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
             {
-                base.WndProc(ref m);
-                if ((int)m.Result == 1)
                 {
-                    Point p = PointToClient(Cursor.Position);
+                    int sx = (short)((long)m.LParam & 0xFFFF);
+                    int sy = (short)(((long)m.LParam >> 16) & 0xFFFF);
+                    Point p = PointToClient(new Point(sx, sy));
                     int c = _resizeBorder;
-                    bool left = p.X <= c, right = p.X >= ClientSize.Width - c;
-                    bool top = p.Y <= c, bottom = p.Y >= ClientSize.Height - c;
+                    bool left = p.X <= c, right = p.X >= ClientSize.Width - 1 - c;
+                    bool top = p.Y <= c, bottom = p.Y >= ClientSize.Height - 1 - c;
                     if (left && top) { m.Result = (IntPtr)HTTOPLEFT; return; }
                     if (right && top) { m.Result = (IntPtr)HTTOPRIGHT; return; }
                     if (left && bottom) { m.Result = (IntPtr)HTBOTTOMLEFT; return; }
@@ -613,6 +633,7 @@ static class Host
                     if (top) { m.Result = (IntPtr)HTTOP; return; }
                     if (bottom) { m.Result = (IntPtr)HTBOTTOM; return; }
                 }
+                m.Result = (IntPtr)1;
                 return;
             }
             base.WndProc(ref m);
