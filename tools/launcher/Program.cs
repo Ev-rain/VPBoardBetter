@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Management;
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -115,6 +116,12 @@ namespace VPBoardBetter
                 var portEnv = Environment.GetEnvironmentVariable("PORT");
                 int parsed;
                 if (!string.IsNullOrEmpty(portEnv) && int.TryParse(portEnv, out parsed)) Port = parsed;
+
+                if (args.Any(a => string.Equals(a, "-frame", StringComparison.OrdinalIgnoreCase)))
+                {
+                    FrameMode(args.Any(a => string.Equals(a, "-selftest", StringComparison.OrdinalIgnoreCase)));
+                    return;
+                }
 
                 if (args.Any(a => string.Equals(a, "-stop", StringComparison.OrdinalIgnoreCase)))
                 {
@@ -353,6 +360,317 @@ namespace VPBoardBetter
         {
             ShowWindow(h, SwRestore);
             SetForegroundWindow(h);
+        }
+
+        private static readonly string FrameLogFile = Path.Combine(Root, "_frame.log");
+
+        private static void FrameLog(string msg)
+        {
+            try { File.AppendAllText(FrameLogFile, "[" + DateTime.Now.ToString("HH:mm:ss.fff") + "] " + msg + Environment.NewLine, Encoding.UTF8); }
+            catch { }
+        }
+
+        private const int GwlStyle = -16;
+        private const uint VpbWsCaption = 0x00C00000;
+        private const uint SwpNoSize = 0x0001, SwpNoMove = 0x0002, SwpNoZOrder = 0x0004, SwpFrameChanged = 0x0020;
+        private static volatile IntPtr FrameHwnd = IntPtr.Zero;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")]
+        private static extern IntPtr GetWindowLongPtrW(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+        private static extern IntPtr GetWindowLongW(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")]
+        private static extern IntPtr SetWindowLongPtrW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")]
+        private static extern IntPtr SetWindowLongW(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsZoomed(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
+
+        private static IntPtr GetStyleBits(IntPtr h)
+        {
+            return IntPtr.Size == 8 ? GetWindowLongPtrW(h, GwlStyle) : GetWindowLongW(h, GwlStyle);
+        }
+
+        private static void SetStyleBits(IntPtr h, IntPtr value)
+        {
+            if (IntPtr.Size == 8) SetWindowLongPtrW(h, GwlStyle, value);
+            else SetWindowLongW(h, GwlStyle, value);
+        }
+
+        /// <summary>去掉标题栏样式位（保留 THICKFRAME/MAXIMIZEBOX/SYSMENU），再强制一次 NC 重算。</summary>
+        private static void StripCaption(IntPtr h)
+        {
+            try
+            {
+                long style = GetStyleBits(h).ToInt64();
+                if ((style & VpbWsCaption) != 0)
+                {
+                    long next = style & ~(long)VpbWsCaption;
+                    SetStyleBits(h, (IntPtr)next);
+                    FrameLog("去掉 WS_CAPTION（style 0x" + style.ToString("X") + " → 0x" + next.ToString("X") + "）");
+                }
+                SetWindowPos(h, IntPtr.Zero, 0, 0, 0, 0, SwpFrameChanged | SwpNoMove | SwpNoSize | SwpNoZOrder);
+                NativeRect r;
+                if (GetWindowRect(h, out r))
+                {
+                    int w = r.Right - r.Left;
+                    int ht = r.Bottom - r.Top;
+                    SetWindowPos(h, IntPtr.Zero, 0, 0, w, ht + 1, SwpNoMove | SwpNoZOrder);
+                    SetWindowPos(h, IntPtr.Zero, 0, 0, w, ht, SwpNoMove | SwpNoZOrder);
+                }
+            }
+            catch (Exception ex) { FrameLog("去 caption 失败: " + ex.Message); }
+        }
+
+        private static void FrameReply(TcpClient client, int code, string body)
+        {
+            try
+            {
+                using (var s = client.GetStream())
+                {
+                    string reason = code == 200 ? "OK" : code == 204 ? "No Content" : code == 404 ? "Not Found" : "Service Unavailable";
+                    string head = "HTTP/1.1 " + code + " " + reason + "\r\n" +
+                        "Content-Type: application/json; charset=utf-8\r\n" +
+                        "Content-Length: " + (body == null ? 0 : Encoding.UTF8.GetByteCount(body)) + "\r\n" +
+                        "Connection: close\r\n\r\n";
+                    var hb = Encoding.UTF8.GetBytes(head);
+                    s.Write(hb, 0, hb.Length);
+                    if (body != null)
+                    {
+                        var bb = Encoding.UTF8.GetBytes(body);
+                        s.Write(bb, 0, bb.Length);
+                    }
+                    s.Flush();
+                }
+            }
+            catch { }
+            finally { try { client.Close(); } catch { } }
+        }
+
+        private static string FrameStateJson()
+        {
+            IntPtr h = FrameHwnd;
+            bool max = h != IntPtr.Zero && IsZoomed(h);
+            return "{\"ok\":true,\"hwnd\":\"0x" + h.ToInt64().ToString("X") + "\",\"maximized\":" + (max ? "true" : "false") + ",\"active\":true}";
+        }
+
+        private static void ServeClient(TcpClient client)
+        {
+            try
+            {
+                client.ReceiveTimeout = 3000;
+                string path = "/";
+                // 不能在这里释放 NetworkStream：释放会关闭连接，响应就发不出去
+                var stream = client.GetStream();
+                var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+                string first = reader.ReadLine();
+                if (string.IsNullOrEmpty(first)) { FrameReply(client, 400, "{\"ok\":false}"); return; }
+                var parts = first.Split(' ');
+                if (parts.Length >= 2) path = parts[1];
+                string line;
+                while (!string.IsNullOrEmpty(line = reader.ReadLine())) { }
+                FrameLog("命令 " + path);
+                if (path == "/state") { FrameReply(client, 200, FrameStateJson()); return; }
+                IntPtr h = FrameHwnd;
+                if (h == IntPtr.Zero) { FrameReply(client, 503, "{\"ok\":false,\"error\":\"没有窗口\"}"); return; }
+                switch (path)
+                {
+                    case "/drag":
+                        ReleaseCapture();
+                        SendMessage(h, 0x00A1 /* WM_NCLBUTTONDOWN */, (IntPtr)2 /* HTCAPTION */, IntPtr.Zero);
+                        FrameReply(client, 204, null);
+                        return;
+                    case "/min":
+                        PostMessage(h, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF020, IntPtr.Zero);
+                        FrameReply(client, 204, null);
+                        return;
+                    case "/max":
+                        PostMessage(h, 0x0112, (IntPtr)(IsZoomed(h) ? 0xF120 : 0xF030), IntPtr.Zero);
+                        FrameReply(client, 204, null);
+                        return;
+                    case "/close":
+                        PostMessage(h, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
+                        FrameReply(client, 204, null);
+                        return;
+                    default:
+                        FrameReply(client, 404, "{\"ok\":false,\"error\":\"unknown\"}");
+                        return;
+                }
+            }
+            catch (Exception ex)
+            {
+                FrameLog("处理请求失败: " + ex.Message);
+                try { client.Close(); } catch { }
+            }
+        }
+
+        private static void KillQojBrowsers()
+        {
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher("SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='msedge.exe'"))
+                {
+                    foreach (var obj in searcher.Get())
+                    {
+                        var cmd = obj["CommandLine"] as string;
+                        if (cmd == null || cmd.IndexOf("vpb-qoj-", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        try { Process.GetProcessById(Convert.ToInt32(obj["ProcessId"])).Kill(); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static void KillServerPort()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo("cmd.exe", "/c netstat -ano -p tcp | findstr LISTENING | findstr :" + Port)
+                { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+                using (var p = Process.Start(psi))
+                {
+                    var output = p.StandardOutput.ReadToEnd();
+                    p.WaitForExit(3000);
+                    foreach (var line in output.Split('\n'))
+                    {
+                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length == 0) continue;
+                        int pid;
+                        if (!int.TryParse(parts[parts.Length - 1], out pid)) continue;
+                        try { Process.GetProcessById(pid).Kill(); FrameLog("已结束服务进程 " + pid); }
+                        catch (Exception ex) { FrameLog("结束服务进程 " + pid + " 失败: " + ex.Message); }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static void CleanupAndExit()
+        {
+            FrameLog("窗口已关闭：清理服务与后台浏览器");
+            try { File.Delete(Path.Combine(Root, "_frame.json")); } catch { }
+            KillServerPort();
+            KillQojBrowsers();
+            try
+            {
+                foreach (var dir in Directory.GetDirectories(Path.GetTempPath(), "vpb-qoj-*"))
+                {
+                    try { Directory.Delete(dir, true); } catch { }
+                }
+            }
+            catch { }
+            FrameLog("清理完成，退出");
+            Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// -frame：去掉窗口的系统标题栏，并在 127.0.0.1 上提供 /state、/drag、/min、/max、/close。
+        /// 窗口被关掉（按钮、Alt+F4、任务栏）后清理服务进程与后台浏览器再退出。
+        /// </summary>
+        private static void FrameMode(bool selftest)
+        {
+            FrameLog("selftest: start");
+            int fport = 8790;
+            int parsed;
+            var env = Environment.GetEnvironmentVariable("FRAME_PORT");
+            if (!string.IsNullOrEmpty(env) && int.TryParse(env, out parsed)) fport = parsed;
+
+            TcpListener tcp;
+            try
+            {
+                tcp = new TcpListener(IPAddress.Loopback, fport);
+                tcp.Start();
+            }
+            catch (Exception ex)
+            {
+                FrameLog("监听 127.0.0.1:" + fport + " 失败: " + ex.Message);
+                return;
+            }
+            FrameLog("selftest: server=ok");
+            FrameLog("helper 已监听 127.0.0.1:" + fport);
+            try { File.WriteAllText(Path.Combine(Root, "_frame.json"), "{\"port\":" + fport + "}", Encoding.UTF8); }
+            catch (Exception ex) { FrameLog("写 _frame.json 失败: " + ex.Message); }
+
+            var accept = new Thread(delegate()
+            {
+                while (true)
+                {
+                    TcpClient client;
+                    try { client = tcp.AcceptTcpClient(); } catch { break; }
+                    var t = new Thread(delegate() { ServeClient(client); });
+                    t.IsBackground = true;
+                    t.Start();
+                }
+            });
+            accept.IsBackground = true;
+            accept.Start();
+
+            if (selftest)
+            {
+                FrameLog("selftest: style=skip（没有窗口）");
+                FrameLog("selftest: done");
+                try { tcp.Stop(); } catch { }
+                try { File.Delete(Path.Combine(Root, "_frame.json")); } catch { }
+                return;
+            }
+
+            bool saidNoWindow = false;
+            while (true)
+            {
+                IntPtr h = FrameHwnd;
+                if (h == IntPtr.Zero)
+                {
+                    h = FindAppWindow();
+                    if (h == IntPtr.Zero)
+                    {
+                        if (!saidNoWindow) { FrameLog("未找到窗口，重试"); saidNoWindow = true; }
+                        Thread.Sleep(400);
+                        continue;
+                    }
+                    FrameHwnd = h;
+                    saidNoWindow = false;
+                    FrameLog("接管窗口 0x" + h.ToInt64().ToString("X"));
+                    StripCaption(h);
+                }
+                else if (!IsWindow(h))
+                {
+                    FrameHwnd = IntPtr.Zero;
+                    CleanupAndExit();
+                    return;
+                }
+                else
+                {
+                    long style = GetStyleBits(h).ToInt64();
+                    if ((style & VpbWsCaption) != 0)
+                    {
+                        FrameLog("样式里又出现 caption，重新去掉");
+                        StripCaption(h);
+                    }
+                }
+                Thread.Sleep(400);
+            }
         }
 
         private static void Stop()
