@@ -24,7 +24,7 @@
 
 ## 怎么启动
 
-双击 **`VPBoardBetter.exe`** 即可；不想用 exe 就双击 `start.bat`，行为一样。关掉服务用 `stop.bat`。
+双击 **`VPBoardBetter.exe`** 即可；不想用 exe 就双击 `start.bat`，行为一样。关掉应用窗口时，本地服务会跟着退出。
 
 ## 加载一场比赛
 

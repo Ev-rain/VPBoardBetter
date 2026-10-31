@@ -196,3 +196,15 @@ if ($edge) {
   Log '没找到 Edge，用默认浏览器'
   Start-Process $url | Out-Null
 }
+
+$frameExe = Join-Path $root 'VPBoardBetter.exe'
+if (Test-Path $frameExe) {
+  try {
+    Start-Process -FilePath $frameExe -ArgumentList '-frame' -WorkingDirectory $root -ErrorAction Stop | Out-Null
+    Log '已启动边框 helper'
+  } catch {
+    Log ('启动边框 helper 失败: ' + $_.Exception.Message)
+  }
+} else {
+  Log '没有 VPBoardBetter.exe，跳过自绘标题栏'
+}
