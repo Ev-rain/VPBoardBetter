@@ -472,17 +472,9 @@ static class Host
             _bar.Height = BAR_H;
             _bar.BackColor = Color.FromArgb(22, 25, 30);
             _bar.Paint += PaintBar;
-            _bar.MouseDown += delegate(object s, MouseEventArgs e)
-            {
-                if (e.Button != MouseButtons.Left) return;
-                ReleaseCapture();
-                SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-            };
-            _bar.MouseDoubleClick += delegate(object s, MouseEventArgs e)
-            {
-                if (e.Button != MouseButtons.Left) return;
-                ToggleMax();
-            };
+            _bar.MouseDown += delegate(object s2, MouseEventArgs e) { BarMouseDown(_bar, e); };
+            _bar.MouseMove += delegate(object s2, MouseEventArgs e) { BarMouseMove(_bar, e); };
+            _bar.MouseUp += delegate(object s2, MouseEventArgs e) { BarMouseUp(_bar, e); };
 
             _title = new Label();
             _title.AutoSize = false;
@@ -493,13 +485,9 @@ static class Host
             _title.Font = new Font("Segoe UI Semibold", 11f, FontStyle.Regular);
             _title.SetBounds(52, 0, 400, BAR_H - 2);
             _title.TextAlign = ContentAlignment.MiddleLeft;
-            _title.MouseDown += delegate(object s, MouseEventArgs e)
-            {
-                if (e.Button != MouseButtons.Left) return;
-                ReleaseCapture();
-                SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-            };
-            _title.MouseDoubleClick += delegate(object s, MouseEventArgs e) { ToggleMax(); };
+            _title.MouseDown += delegate(object s2, MouseEventArgs e) { BarMouseDown(_title, e); };
+            _title.MouseMove += delegate(object s2, MouseEventArgs e) { BarMouseMove(_title, e); };
+            _title.MouseUp += delegate(object s2, MouseEventArgs e) { BarMouseUp(_title, e); };
 
             _min = MakeButton("\uE921", false, delegate { WindowState = FormWindowState.Minimized; });
             _max = MakeButton("\uE922", false, delegate { ToggleMax(); });
@@ -706,6 +694,66 @@ static class Host
             _state.Save();
         }
 
+        long _barClickMs = 0;
+        int _barClickX = 0;
+        int _barClickY = 0;
+        bool _barDown = false;
+        bool _barDragging = false;
+        Point _barDownPt;
+
+        // 按下先不启动系统拖动循环：等真正移动 5px 再交回系统（保住贴边吸附），
+        // 抬起时按「时间 + 位置」自己判定双击 —— Control 没有 CS_DBLCLKS，e.Clicks 恒为 1。
+        void BarMouseDown(Control src, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            _barDown = true;
+            _barDragging = false;
+            _barDownPt = src.PointToScreen(e.Location);
+        }
+
+        void BarMouseMove(Control src, MouseEventArgs e)
+        {
+            if (!_barDown || _barDragging) return;
+            if ((Control.MouseButtons & MouseButtons.Left) == 0) { _barDown = false; return; }
+            Point p = src.PointToScreen(e.Location);
+            if (Math.Abs(p.X - _barDownPt.X) + Math.Abs(p.Y - _barDownPt.Y) < 5) return;
+
+            _barDragging = true;
+            _barClickMs = 0;
+            ReleaseCapture();
+            SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+            _barDown = false;
+            _barDragging = false;
+        }
+
+        void BarMouseUp(Control src, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left || !_barDown) return;
+            _barDown = false;
+            if (_barDragging) { _barDragging = false; return; }
+
+            Point p = src.PointToScreen(e.Location);
+            long now = DateTime.Now.Ticks / 10000;
+            bool dbl = _barClickMs > 0 && now - _barClickMs <= GetDoubleClickTime()
+                && Math.Abs(p.X - _barClickX) <= 4 && Math.Abs(p.Y - _barClickY) <= 4;
+            if (dbl)
+            {
+                _barClickMs = 0;
+                ToggleMax();
+                return;
+            }
+            _barClickMs = now;
+            _barClickX = p.X;
+            _barClickY = p.Y;
+        }
+
+        protected override void OnDeactivate(EventArgs e)
+        {
+            _barDown = false;
+            _barDragging = false;
+            base.OnDeactivate(e);
+        }
+
         void ToggleMax()
         {
             if (WindowState == FormWindowState.Maximized) WindowState = FormWindowState.Normal;
@@ -894,4 +942,6 @@ static class Host
     static extern bool ReleaseCapture();
     [DllImport("user32.dll")]
     static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    static extern uint GetDoubleClickTime();
 }
