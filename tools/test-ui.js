@@ -39,6 +39,7 @@ function get(port, p) {
   ok('index.html 有页面容器与品牌位', html.indexOf('id="app"') >= 0 && html.indexOf('class="brand"') >= 0);
   ok('style.css 不再有 .titlebar / body.framed', css.indexOf('.titlebar') < 0 && css.indexOf('body.framed') < 0);
   ok('style.css 有 .hosted .brand 规则', css.indexOf('.hosted .brand') >= 0);
+  ok('app.js 把版本号写进 #appVersion', app.indexOf("getElementById('appVersion')") >= 0);
   ok('app.js 支持 ?host=1 → body.hosted', app.indexOf("qs.get('host') === '1'") >= 0 && app.indexOf("classList.add('hosted')") >= 0);
   ok('app.js 不再含 frame 客户端代码', !/initFrame|frameCmd|frameState/.test(app));
   ok('server.js 不再有 /api/frame', srv.indexOf('/api/frame') < 0 && srv.indexOf('frameCall') < 0);
