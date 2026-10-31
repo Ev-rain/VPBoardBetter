@@ -29,9 +29,20 @@ static class Host
     const int WS_CAPTION = 0x00C00000;
     const int WM_NCCALCSIZE = 0x0083;
     const int WM_NCHITTEST = 0x0084;
+    const int WM_NCACTIVATE = 0x0086;
+    const int WM_ACTIVATE = 0x0006;
+    const int WM_ACTIVATEAPP = 0x001C;
+    const uint SWP_NOSIZE = 0x0001;
+    const uint SWP_NOMOVE = 0x0002;
+    const uint SWP_NOZORDER = 0x0004;
+    const uint SWP_NOACTIVATE = 0x0010;
+    const uint SWP_FRAMECHANGED = 0x0020;
 
     [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     static readonly string LogPath = Path.Combine(Root, "_host.log");
@@ -499,6 +510,12 @@ static class Host
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
+            ApplyFrameAttrs();
+        }
+
+        // 去掉系统那圈 1px 边框；窗口激活状态变化后要重新设一遍，否则会冒出灰白边
+        void ApplyFrameAttrs()
+        {
             try
             {
                 int noBorder = unchecked((int)0xFFFFFFFE);
@@ -805,6 +822,23 @@ static class Host
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == WM_NCACTIVATE)
+            {
+                // 交回默认处理会让系统重画非客户区，Alt+Tab 之后就会出现一圈灰白边
+                m.Result = (IntPtr)1;
+                return;
+            }
+
+            if (m.Msg == WM_ACTIVATE || m.Msg == WM_ACTIVATEAPP)
+            {
+                base.WndProc(ref m);
+                ApplyFrameAttrs();
+                SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                Invalidate(true);
+                return;
+            }
+
             if (m.Msg == 0x0083) // WM_NCCALCSIZE：客户区铺满整个窗口，去掉系统那圈边框
             {
                 if (m.WParam != IntPtr.Zero) m.Result = IntPtr.Zero;
