@@ -123,6 +123,19 @@ namespace VPBoardBetter
                     return;
                 }
 
+                if (args.Any(a => string.Equals(a, "-dump", StringComparison.OrdinalIgnoreCase)))
+                {
+                    DumpWindows();
+                    return;
+                }
+
+                if (args.Any(a => string.Equals(a, "-shot", StringComparison.OrdinalIgnoreCase)))
+                {
+                    string outFile = args.Length > 1 && !args[0].StartsWith("-") ? args[0] : args[args.Length - 1];
+                    ShotWindow(outFile);
+                    return;
+                }
+
                 if (args.Any(a => string.Equals(a, "-stop", StringComparison.OrdinalIgnoreCase)))
                 {
                     Stop();
@@ -337,23 +350,81 @@ namespace VPBoardBetter
 
         private static IntPtr FindAppWindow()
         {
-            IntPtr found = IntPtr.Zero;
+            var list = FindAppWindows();
+            return list.Count > 0 ? list[0] : IntPtr.Zero;
+        }
+
+        /// <summary>所有可见的、属于 msedge 的 Chromium 顶层窗口，按面积从大到小排列。</summary>
+        private static System.Collections.Generic.List<IntPtr> FindAppWindows()
+        {
+            var list = new System.Collections.Generic.List<IntPtr>();
             EnumWindows(delegate(IntPtr h, IntPtr l)
             {
-                var sb = new StringBuilder(512);
-                GetWindowText(h, sb, 512);
-                if (sb.ToString().IndexOf(TitlePart, StringComparison.OrdinalIgnoreCase) < 0) return true;
                 var cls = new StringBuilder(64);
                 GetClassName(h, cls, 64);
                 if (!cls.ToString().StartsWith("Chrome_WidgetWin")) return true;
+                if (!IsWindowVisible(h)) return true;
+
                 uint pid;
                 GetWindowThreadProcessId(h, out pid);
                 if (pid == 0) return true;
+
+                var sb = new StringBuilder(512);
+                GetWindowText(h, sb, 512);
+                string title = sb.ToString();
+                bool byTitle = title.IndexOf(TitlePart, StringComparison.OrdinalIgnoreCase) >= 0;
+                // 正式标题出来之前窗口标题是 URL（127.0.0.1/…），这时要靠进程命令行里的 .app-profile 认人，
+                // 免得把用户自己浏览器里打开的同一个地址也当成应用窗口
+                bool byUrl = !byTitle && title.IndexOf("127.0.0.1", StringComparison.Ordinal) >= 0
+                    && CmdLineOf(pid).IndexOf(".app-profile", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!byTitle && !byUrl) return true;
+
                 try { if (Process.GetProcessById((int)pid).ProcessName != "msedge") return true; } catch { return true; }
-                found = h;
-                return false;
+
+                NativeRect r;
+                if (!GetWindowRect(h, out r)) return true;
+                int w = r.Right - r.Left, ht = r.Bottom - r.Top;
+                if (w < 300 || ht < 200) return true;
+
+                list.Add(h);
+                return true;
             }, IntPtr.Zero);
-            return found;
+            list.Sort(delegate(IntPtr a, IntPtr b) { return AreaOf(b).CompareTo(AreaOf(a)); });
+            return list;
+        }
+
+        private static long AreaOf(IntPtr h)
+        {
+            NativeRect r;
+            if (!GetWindowRect(h, out r)) return 0;
+            return (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<uint, string> CmdLineCache =
+            new System.Collections.Generic.Dictionary<uint, string>();
+
+        private static string CmdLineOf(uint pid)
+        {
+            lock (CmdLineCache)
+            {
+                string cached;
+                if (CmdLineCache.TryGetValue(pid, out cached)) return cached;
+            }
+            string cmd = "";
+            try
+            {
+                using (var q = new ManagementObjectSearcher("SELECT CommandLine FROM Win32_Process WHERE ProcessId=" + pid))
+                {
+                    foreach (ManagementObject mo in q.Get())
+                    {
+                        cmd = Convert.ToString(mo["CommandLine"]);
+                        break;
+                    }
+                }
+            }
+            catch { }
+            lock (CmdLineCache) { CmdLineCache[pid] = cmd; }
+            return cmd;
         }
 
         private static void Focus(IntPtr h)
@@ -405,8 +476,67 @@ namespace VPBoardBetter
         [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
 
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+
         [StructLayout(LayoutKind.Sequential)]
         private struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
+
+        /// <summary>调试用：列出所有 Chromium 顶层窗口（句柄/进程/可见/样式/矩形/标题）到 _dump.txt。</summary>
+        private static void DumpWindows()
+        {
+            var sb = new StringBuilder();
+            EnumWindows(delegate(IntPtr h, IntPtr l)
+            {
+                var cls = new StringBuilder(256);
+                GetClassName(h, cls, 256);
+                string clsName = cls.ToString();
+                if (!clsName.StartsWith("Chrome_WidgetWin")) return true;
+                uint pid;
+                GetWindowThreadProcessId(h, out pid);
+                string proc = "";
+                try { proc = Process.GetProcessById((int)pid).ProcessName; } catch { }
+                var title = new StringBuilder(512);
+                GetWindowText(h, title, 512);
+                NativeRect r;
+                GetWindowRect(h, out r);
+                sb.AppendLine(string.Format(
+                    "hwnd=0x{0:X} pid={1} proc={2} visible={3} style=0x{4:X8} rect={5},{6},{7},{8} class={9} title={10}",
+                    h.ToInt64(), pid, proc, IsWindowVisible(h), GetStyleBits(h).ToInt64(),
+                    r.Left, r.Top, r.Right, r.Bottom, clsName, title));
+                return true;
+            }, IntPtr.Zero);
+            File.WriteAllText(Path.Combine(Root, "_dump.txt"), sb.ToString(), Encoding.UTF8);
+            FrameLog("dump: " + sb.Length + " chars");
+        }
+
+        /// <summary>调试用：截应用窗口到 PNG（PrintWindow，含系统标题栏）。</summary>
+        private static void ShotWindow(string outFile)
+        {
+            IntPtr h = FindAppWindow();
+            FrameLog("shot: hwnd=0x" + h.ToInt64().ToString("X"));
+            if (h == IntPtr.Zero) return;
+            NativeRect r;
+            if (!GetWindowRect(h, out r)) { FrameLog("shot: GetWindowRect 失败"); return; }
+            int w = r.Right - r.Left, ht = r.Bottom - r.Top;
+            if (w <= 0 || ht <= 0) { FrameLog("shot: 窗口尺寸异常"); return; }
+            using (var bmp = new Bitmap(w, ht))
+            {
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    IntPtr hdc = g.GetHdc();
+                    bool ok = PrintWindow(h, hdc, 2);
+                    g.ReleaseHdc(hdc);
+                    FrameLog("shot: printwindow=" + ok + " " + w + "x" + ht);
+                }
+                string p = Path.IsPathRooted(outFile) ? outFile : Path.Combine(Root, outFile);
+                bmp.Save(p, System.Drawing.Imaging.ImageFormat.Png);
+                FrameLog("shot: saved " + p);
+            }
+        }
 
         private static IntPtr GetStyleBits(IntPtr h)
         {
@@ -431,15 +561,8 @@ namespace VPBoardBetter
                     SetStyleBits(h, (IntPtr)next);
                     FrameLog("去掉 WS_CAPTION（style 0x" + style.ToString("X") + " → 0x" + next.ToString("X") + "）");
                 }
-                SetWindowPos(h, IntPtr.Zero, 0, 0, 0, 0, SwpFrameChanged | SwpNoMove | SwpNoSize | SwpNoZOrder);
-                NativeRect r;
-                if (GetWindowRect(h, out r))
-                {
-                    int w = r.Right - r.Left;
-                    int ht = r.Bottom - r.Top;
-                    SetWindowPos(h, IntPtr.Zero, 0, 0, w, ht + 1, SwpNoMove | SwpNoZOrder);
-                    SetWindowPos(h, IntPtr.Zero, 0, 0, w, ht, SwpNoMove | SwpNoZOrder);
-                }
+                bool ok = SetWindowPos(h, IntPtr.Zero, 0, 0, 0, 0, SwpFrameChanged | SwpNoMove | SwpNoSize | SwpNoZOrder);
+                FrameLog("strip: FrameChanged=" + ok + " now=0x" + GetStyleBits(h).ToInt64().ToString("X"));
             }
             catch (Exception ex) { FrameLog("去 caption 失败: " + ex.Message); }
         }
@@ -637,35 +760,48 @@ namespace VPBoardBetter
             }
 
             bool saidNoWindow = false;
+            int goneTicks = 0;
             while (true)
             {
-                IntPtr h = FrameHwnd;
-                if (h == IntPtr.Zero)
+                var wins = FindAppWindows();
+                if (wins.Count == 0)
                 {
-                    h = FindAppWindow();
-                    if (h == IntPtr.Zero)
+                    if (FrameHwnd != IntPtr.Zero && !IsWindow(FrameHwnd))
                     {
-                        if (!saidNoWindow) { FrameLog("未找到窗口，重试"); saidNoWindow = true; }
-                        Thread.Sleep(400);
-                        continue;
+                        goneTicks++;
+                        if (goneTicks >= 3)
+                        {
+                            FrameHwnd = IntPtr.Zero;
+                            CleanupAndExit();
+                            return;
+                        }
                     }
-                    FrameHwnd = h;
-                    saidNoWindow = false;
-                    FrameLog("接管窗口 0x" + h.ToInt64().ToString("X"));
-                    StripCaption(h);
+                    if (FrameHwnd == IntPtr.Zero && !saidNoWindow)
+                    {
+                        FrameLog("未找到窗口，重试");
+                        saidNoWindow = true;
+                    }
+                    Thread.Sleep(400);
+                    continue;
                 }
-                else if (!IsWindow(h))
+                goneTicks = 0;
+
+                if (saidNoWindow || FrameHwnd == IntPtr.Zero)
                 {
-                    FrameHwnd = IntPtr.Zero;
-                    CleanupAndExit();
-                    return;
+                    var names = new StringBuilder();
+                    foreach (var w in wins) names.Append(" 0x" + w.ToInt64().ToString("X"));
+                    FrameLog("找到 " + wins.Count + " 个候选窗口:" + names);
+                    saidNoWindow = false;
                 }
-                else
+                FrameHwnd = wins[0];
+
+                // 每一个可见的应用窗口都要处理：启动过程中可能同时存在加载中的旧窗口
+                foreach (var h in wins)
                 {
                     long style = GetStyleBits(h).ToInt64();
                     if ((style & VpbWsCaption) != 0)
                     {
-                        FrameLog("样式里又出现 caption，重新去掉");
+                        FrameLog("接管窗口 0x" + h.ToInt64().ToString("X"));
                         StripCaption(h);
                     }
                 }
