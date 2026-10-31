@@ -261,9 +261,74 @@ function testTitlebar() {
   ok(/\.tb-close:hover\s*\{[^}]*#e81123/.test(css), '关闭 hover #e81123');
 }
 
+/* ---------- 在最小 DOM 里加载 core.js + app.js ---------- */
+function loadApp(doc) {
+  const vm = require('vm');
+  const storage = {
+    _m: {},
+    getItem: function (k) { return Object.prototype.hasOwnProperty.call(this._m, k) ? this._m[k] : null; },
+    setItem: function (k, v) { this._m[k] = String(v); },
+    removeItem: function (k) { delete this._m[k]; }
+  };
+  const ctx = {
+    console: console, Math: Math, Date: Date, JSON: JSON, Promise: Promise,
+    setTimeout: function () { return 0; }, clearTimeout: function () { },
+    setInterval: function () { return 0; }, clearInterval: function () { },
+    requestAnimationFrame: function () { return 0; }, cancelAnimationFrame: function () { },
+    document: doc, localStorage: storage,
+    location: { search: '', href: 'http://127.0.0.1:8787/', hash: '' },
+    navigator: { language: 'zh-CN' },
+    screen: { availWidth: 1920, availHeight: 1080 },
+    URLSearchParams: URLSearchParams,
+    fetch: function () { return Promise.resolve({ ok: true, json: function () { return Promise.resolve({ active: false }); } }); }
+  };
+  ctx.window = ctx;
+  ctx.globalThis = ctx;
+  ctx.self = ctx;
+  ctx.addEventListener = function () { };
+  ctx.removeEventListener = function () { };
+  vm.createContext(ctx);
+  ['assets/core.js', 'assets/app.js'].forEach(function (f) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  });
+  return ctx;
+}
+
+async function testInteraction() {
+  console.log('— 页面交互 —');
+  const doc = loadDom(path.join(ROOT, 'index.html'));
+  const ctx = loadApp(doc);
+  const vpApp = ctx.VPApp;
+  ok(vpApp && typeof vpApp.initFrame === 'function', 'VPApp.initFrame 存在');
+  if (!vpApp || typeof vpApp.initFrame !== 'function') return;
+
+  const calls = [];
+  const send = function (cmd) { calls.push('/api/frame/' + cmd); return Promise.resolve(true); };
+
+  await vpApp.initFrame({ state: { active: true, maximized: false }, cmd: send });
+  ok(doc.getElementById('titlebar').hidden === false, 'helper 在线时显示标题条');
+  ok(doc.body.classList.contains('framed'), 'body 加 framed');
+  ok(doc.getElementById('tbMax').textContent === '□', '最大化按钮显示 □');
+
+  doc.getElementById('tbMin').dispatchEvent({ type: 'mousedown', button: 0 });
+  ok(JSON.stringify(calls) === JSON.stringify(['/api/frame/min']), '点最小化只发 min，不触发拖动', calls);
+
+  doc.getElementById('tbTitle').dispatchEvent({ type: 'mousedown', button: 0 });
+  ok(JSON.stringify(calls) === JSON.stringify(['/api/frame/min', '/api/frame/drag']), '标题区按下发 drag', calls);
+
+  doc.getElementById('tbMax').dispatchEvent({ type: 'mousedown', button: 0 });
+  doc.getElementById('tbClose').dispatchEvent({ type: 'mousedown', button: 0 });
+  ok(JSON.stringify(calls.slice(-2)) === JSON.stringify(['/api/frame/max', '/api/frame/close']), '最大化/关闭按钮', calls);
+
+  await vpApp.initFrame({ state: { active: false }, cmd: send });
+  ok(doc.getElementById('titlebar').hidden === true, '没有 helper 时隐藏标题条');
+  ok(!doc.body.classList.contains('framed'), '没有 helper 时不加 framed');
+}
+
 async function main() {
   await testProxy();
   testTitlebar();
+  await testInteraction();
   console.log(failures === 0 ? '\n全部通过 ✓' : '\n失败 ' + failures + ' 项 ✗');
   process.exit(failures === 0 ? 0 : 1);
 }
