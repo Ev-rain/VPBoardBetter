@@ -116,6 +116,8 @@ Chromium 会在**创建窗口时**应用 `--window-size`，不需要任何“开
 - 窗口保留系统的 `WS_THICKFRAME`（只去掉 `WS_CAPTION`）：边缘缩放/贴边吸附交给 Windows，客户区仍然铺满、没有内缩的“截图带”；
 - 用 DWM 属性把系统那圈边框线去掉、并显式要求圆角：`DwmSetWindowAttribute(hwnd, 34 /*BORDER_COLOR*/, 0xFFFFFFFE /*NONE*/)`、`(33 /*CORNER_PREFERENCE*/, 2 /*ROUND*/)`、`(20 /*USE_IMMERSIVE_DARK_MODE*/, 1)`；
 - 于是非最大化时是圆角窗口（Windows 11 的 DWM 圆角），最大化时自动变直角；
+- 标题条左侧图标直接取 exe 内嵌图标（`Icon.ExtractAssociatedIcon`，来自 `tools/launcher/app.ico`，也就是黄色气球）；
+- 标题条文字跟着页面 `document.title` 走：`CoreWebView2.DocumentTitleChanged` 里把 `" · VP Board Better"` 后缀去掉，只留比赛名；还没加载比赛时页面标题是 `VP Board Better · 虚拟榜单`，此时标题条留空；
 - 窗口大小/位置/最大化状态写 `_window.json`，关闭时保存；
 - 关掉窗口后：结束监听 8787 的进程 → 结束命令行里带 `vpb-qoj-` 的 `msedge.exe` → 删 `%TEMP%\vpb-qoj-*`；
 - 运行期依赖 exe 旁边的 `Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`、`WebView2Loader.dll`（`tools/build-exe.ps1` 从本机 SDK 目录复制）；

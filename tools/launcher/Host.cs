@@ -322,6 +322,7 @@ static class Host
     {
         Panel _bar, _body;
         Label _title, _splash;
+        Icon _barIcon;
         Button _min, _max, _close;
         WebView2 _view;
         System.Windows.Forms.Timer _saveTimer;
@@ -364,7 +365,8 @@ static class Host
 
             _title = new Label();
             _title.AutoSize = false;
-            _title.Text = "VP Board Better";
+            _title.Text = "";
+            _title.AutoEllipsis = true;
             _title.ForeColor = Color.FromArgb(226, 232, 240);
             _title.BackColor = Color.Transparent;
             _title.Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
@@ -448,6 +450,19 @@ static class Host
             return b;
         }
 
+        void UpdateBarTitle()
+        {
+            string t = "";
+            try { if (_view != null && _view.CoreWebView2 != null) t = _view.CoreWebView2.DocumentTitle ?? ""; } catch { }
+            string suffix = " · VP Board Better";
+            string name = "";
+            int i = t.IndexOf(suffix, StringComparison.Ordinal);
+            if (i > 0) name = t.Substring(0, i).Trim();
+            if (name.StartsWith("VP Board Better", StringComparison.Ordinal)) name = "";
+            _title.Text = name;
+            try { Text = name.Length == 0 ? "VP Board Better" : name + " · VP Board Better"; } catch { }
+        }
+
         void LayoutParts()
         {
             if (_bar == null || _body == null) return;
@@ -475,10 +490,12 @@ static class Host
                 g.FillRectangle(brush, r);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using (var b = new SolidBrush(Color.FromArgb(255, 201, 60)))
-                g.FillEllipse(b, 14, 9, 18, 18);
-            using (var pen = new Pen(Color.FromArgb(120, 140, 160), 1f))
-                g.DrawLine(pen, 23, 27, 23, 33);
+            try
+            {
+                if (_barIcon == null) _barIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (_barIcon != null) g.DrawIcon(_barIcon, new Rectangle(12, 8, 20, 20));
+            }
+            catch { }
         }
 
         void QueueSave()
@@ -590,6 +607,8 @@ static class Host
             _browserReady = true;
             try
             {
+                _view.CoreWebView2.DocumentTitleChanged += delegate { UpdateBarTitle(); };
+                UpdateBarTitle();
                 _view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                 _view.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 _view.CoreWebView2.NavigationCompleted += delegate(object s2, CoreWebView2NavigationCompletedEventArgs e2)
